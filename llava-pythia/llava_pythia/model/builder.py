@@ -6,6 +6,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAn
     GPTNeoXModel, GPTNeoXPreTrainedModel
 import torch
 from llava_pythia.model import *
+from llava_pythia.model.language_model.pythia.llava_pythia import LlavaPythiaForCausalLM, LlavaPythiaConfig
 from llava_pythia.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
@@ -40,7 +41,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             bnb_4bit_quant_type='nf4'
         )
     else:
-        kwargs['torch_dtype'] = torch.float16
+        kwargs['torch_dtype'] = torch.float
 
     if 'pythia' in model_name.lower():
         # Load LLaVA-Phi model
@@ -54,7 +55,10 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             config = lora_cfg_pretrained
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=True) # default use_fast=False
             print('Loading LLaVA-Pythia from base model...')
-            model = LlavaPythiaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
+            model = LlavaPythiaForCausalLM.from_pretrained(model_base, 
+                                                           low_cpu_mem_usage=True, config=lora_cfg_pretrained, 
+                                                           force_download=True,
+                                                           **kwargs)
             
             # token_num, tokem_dim = model.embed_out.out_features, model.embed_out.in_features
             # if model.embed_out.weight.shape[0] != token_num:
@@ -62,8 +66,8 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             #     model.model.embed_tokens.weight = torch.nn.Parameter(torch.empty(token_num, tokem_dim, device=model.device, dtype=model.dtype))
             
             print('Loading additional LLaVA-Pythia weights...')
-            if os.path.exists(os.path.join(model_path, 'non_lora_trainables.bin')):
-                non_lora_trainables = torch.load(os.path.join(model_path, 'non_lora_trainables.bin'), map_location='cpu')
+            if os.path.exists(os.path.join(model_path, 'non_lora_trainables.bin', 'pytorch_model.bin')):
+                non_lora_trainables = torch.load(os.path.join(model_path, 'non_lora_trainables.bin', 'pytorch_model.bin'), map_location='cpu')
             else:
                 # this is probably from HF Hub
                 from huggingface_hub import hf_hub_download
@@ -118,8 +122,8 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         if model_base is not None:
             # PEFT model
             from peft import PeftModel
-            tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
-            model = AutoModelForCausalLM.from_pretrained(model_base, torch_dtype=torch.float16, low_cpu_mem_usage=True, device_map="auto")
+            tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=True)
+            model = AutoModelForCausalLM.from_pretrained(model_base, torch_dtype=torch.float16, low_cpu_mem_usage=True, device_map="auto", trust_remote_code=True)
             print(f"Loading LoRA weights from {model_path}")
             model = PeftModel.from_pretrained(model, model_path)
             print(f"Merging weights")

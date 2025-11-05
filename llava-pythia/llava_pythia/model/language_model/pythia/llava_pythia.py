@@ -374,7 +374,7 @@ class LlavaPythiaForCausalLM(GPTNeoXPreTrainedModel, LlavaMetaForCausalLM):
 
             for k in self.noise_scheduler.timesteps:
                 # predict noise
-                noise_pred = self.embed_out(naction, k, global_cond=hidden_states, states=states)
+                noise_pred = self.embed_out(naction, k.to(dtype=naction.dtype), global_cond=hidden_states, states=states)
 
                 # inverse diffusion step (remove noise)
                 naction = self.noise_scheduler.step(

@@ -1,11 +1,11 @@
 #!/bin/bash
 
 #SBATCH -A hpc_default
-#SBATCH --partition=gpuq          # Partition (queue) name
+#SBATCH --partition=aiq          # Partition (queue) name
 #SBATCH --nodes=1                   # Number of nodes
 #SBATCH --ntasks-per-node=1           # Only ONE task per node!
 #SBATCH --gres=gpu:4                # Request 4 GPUs per node
-#SBATCH --cpus-per-task=64             # Adjust for data loading, etc.
+#SBATCH --cpus-per-task=32             # Adjust for data loading, etc.
 #SBATCH --exclude=gnode14
 #SBATCH --export=ALL
 

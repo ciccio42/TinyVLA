@@ -44,6 +44,29 @@ cd ../llava-pythia
 pip install -e . 
 ```
 
+**NOTE**
+Update to torch-2.7.0+cu128, deepspeed-0.18.1, bitsandbytes-0.48.0
+```
+# in /.conda/envs/tinyvla/lib/python3.10/site-packages/transformers/trainer.py
+import numpy
+# Allowlist the necessary NumPy classes/functions
+torch.serialization.add_safe_globals([
+    numpy.core.multiarray._reconstruct,
+    numpy.dtype
+])
+2239:checkpoint_rng_state = torch.load(rng_file, weights_only=False)
+
+# in /.conda/envs/tinyvla/lib/python3.10/site-packages/transformers/integrations/deepspeed.py
+402:load_path, _ = deepspeed_engine.load_checkpoint(
+            checkpoint_path, 
+            load_optimizer_states=True, 
+            load_lr_scheduler_states=True,
+            load_module_strict=False
+        )
+```
+
+
+
 ## Data Preparation
 1. Our data format is the same as [act](https://github.com/MarkFzp/act-plus-plus), so you need to transfer your data into h5py format. You can refer to the [rlds_to_h5py.py](https://github.com/lesjie-wen/tinyvla/blob/main/data_utils/rlds_to_h5py.py) which is used to transfer the data from rlds format to h5py format.
 ```angular2html

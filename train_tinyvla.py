@@ -12,23 +12,47 @@ from data_utils.datasets import compute_dict_mean, set_seed  # helper functions
 from aloha_scripts.constants import TASK_CONFIGS
 from data_utils.datasets import LlavaPythiaProcess
 
-
 import IPython
 e = IPython.embed
 import llava_pythia.llava_pythia_utils as LlavaUtils
 from data_utils.processor import *
 from llava_pythia.train.llava_pythia_trainer import LLaVAPythiaTrainer
 from llava_pythia.model.language_model.pythia.llava_pythia import LlavaPythiaConfig
+import debugpy
+import torch
+import torch.utils.checkpoint as checkpoint
+import deepspeed
+import numpy
 
-local_rank = None
+
+local_rank = int(os.getenv("LOCAL_RANK", 0))
+torch.cuda.set_device(local_rank)
+
+deepspeed.init_distributed(dist_backend="nccl")
+torch.serialization.add_safe_globals([numpy.ndarray])
+torch.serialization.add_safe_globals([numpy.core.multiarray._reconstruct])
+torch.serialization.safe_globals([numpy.ndarray])
+
+# Patch to make PyTorch 2.5+ behavior explicit and silence the warning
+if "use_reentrant" not in checkpoint.checkpoint.__code__.co_varnames:
+    # Older versions don't support this param; do nothing
+    pass
+else:
+    _orig_checkpoint = checkpoint.checkpoint
+    def _patched_checkpoint(function, *args, use_reentrant=False, **kwargs):
+        return _orig_checkpoint(function, *args, use_reentrant=use_reentrant, **kwargs)
+    checkpoint.checkpoint = _patched_checkpoint
+
 
 #  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>parameters<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 @dataclass
 class ActionArguments:
     action_head_type: str = field(default="droid_diffusion") # action head type, 'act', 'droid_diffusion'
     action_dim: int = field(default=10)
-    state_dim: int = field(default=7)
+    state_dim: int = field(default=8)
     chunk_size: int = field(default=16) # size of action chunk, same as mobile aloha
+    use_state: bool = field(default=True)            
+    window_size: int = field(default=6)   
 
 @dataclass
 class ModelArguments:
@@ -70,8 +94,8 @@ class TrainingArguments(transformers.TrainingArguments):
     # validate
     do_eval: bool = field(default=False) # unused
     evaluation_strategy: str = field(default="steps") # unused
-    eval_steps: int = field(default=200) # unused
-    per_device_eval_batch_size: int = field(default=32) # batch size per device
+    eval_steps: int = field(default=50) # unused
+    per_device_eval_batch_size: int = field(default=64) # batch size per device
 
     # pretrain
     load_pretrain: bool = False # unused
@@ -110,7 +134,9 @@ class TrainingArguments(transformers.TrainingArguments):
         default=16,
         metadata={"help": "How many bits to use."}
     )
-
+    resume_from_checkpoint: bool = False
+    find_unused_parameters: bool = field(default=False)
+    dataloader_drop_last: bool = field(default=True)
 
 #  <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<parameters>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
@@ -187,6 +213,7 @@ def train_bc(train_dataset=None, val_dataset=None, model=None, config=None, samp
         sampler_params: Parameters for the data sampler.
         tokenizer: Tokenizer used for processing the input data.
     """
+    print(f"Setting seed {config['training_args'].seed}")
     set_seed(config['training_args'].seed)
 
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
@@ -201,12 +228,28 @@ def train_bc(train_dataset=None, val_dataset=None, model=None, config=None, samp
                                  sampler_params=sampler_params,
                                  **data_module)
 
-    trainer.train()
+    trainer.save_state()
+    if config['training_args'].lora_enable:
+        state_dict = LlavaUtils.get_peft_state_maybe_zero_3(
+            model.named_parameters(), config['training_args'].lora_bias
+        )
+        non_lora_state_dict = LlavaUtils.get_peft_state_non_lora_maybe_zero_3(
+            model.named_parameters(), require_grad_only=False
+        )
+        if config['training_args'].local_rank == 0 or config['training_args'].local_rank == -1:
+            model.config.save_pretrained(config['training_args'].output_dir)
+            model.save_pretrained(config['training_args'].output_dir, state_dict=state_dict)
+            torch.save(non_lora_state_dict,
+                       os.path.join(config['training_args'].output_dir, 'non_lora_trainables.bin'))
+    else:
+        LlavaUtils.safe_save_model_for_hf_trainer(trainer=trainer,
+                                                  output_dir=config['training_args'].output_dir)
+
+
+    trainer.train(resume_from_checkpoint=config['training_args'].resume_from_checkpoint)
 
     trainer.save_state()
-
     model.config.use_cache = True
-
     if config['training_args'].lora_enable:
         state_dict = LlavaUtils.get_peft_state_maybe_zero_3(
             model.named_parameters(), config['training_args'].lora_bias
@@ -237,7 +280,6 @@ def main(config=None, llava_pythia_config=None):
         config: Configuration dictionary containing model, data, training, and action arguments.
         llava_pythia_config: Configuration object for the LlavaPythia model.
     """
-    set_seed(1)
     # command line parameters
     training_args = config['training_args'].__dict__
     # get task parameters
@@ -248,7 +290,7 @@ def main(config=None, llava_pythia_config=None):
     camera_names = task_config['camera_names']
     stats_dir = task_config.get('stats_dir', None)
     sample_weights = task_config.get('sample_weights', None)
-    train_ratio = task_config.get('train_ratio', 0.95)
+    train_ratio = task_config.get('train_ratio', 0.99)
     name_filter = task_config.get('name_filter', lambda n: True)
 
     config['camera_names'] = camera_names
@@ -264,28 +306,49 @@ def main(config=None, llava_pythia_config=None):
         tokenizer.pad_token_id = 1
 
 
-    model, data_args = LlavaUtils.load_llava_pythia(config=config, llava_pythia_config=llava_pythia_config, rank0_print=rank0_print, tokenizer=tokenizer)
+    model, data_args = LlavaUtils.load_llava_pythia(
+        config=config,
+        llava_pythia_config=llava_pythia_config, 
+        rank0_print=rank0_print, 
+        tokenizer=tokenizer)
 
     # prepare process class
     llava_pythia_process = LlavaPythiaProcess(data_args, tokenizer=tokenizer)
 
     # load data
-    train_dataset, val_dataset, stats, sampler_params = load_data(dataset_dir, name_filter, camera_names, config['training_args'].per_device_train_batch_size,
-                                                           config['training_args'].per_device_eval_batch_size, config['action_args'].chunk_size,
-                                                           skip_mirrored_data=config['data_args'].skip_mirrored_data,
-                                                           config=config,
-                                                           policy_class=config['action_args'].action_head_type, stats_dir_l=stats_dir,
-                                                           sample_weights=sample_weights, train_ratio=train_ratio, return_dataset=True, llava_pythia_process=llava_pythia_process)
+    train_dataset, val_dataset, stats, sampler_params = load_data(
+        dataset_dir, 
+        name_filter, camera_names, config['training_args'].per_device_train_batch_size,
+        config['training_args'].per_device_eval_batch_size, config['action_args'].chunk_size,
+        skip_mirrored_data=config['data_args'].skip_mirrored_data,
+        config=config,
+        policy_class=config['action_args'].action_head_type, 
+        stats_dir_l=stats_dir,
+        sample_weights=sample_weights, 
+        train_ratio=train_ratio, 
+        return_dataset=True, 
+        llava_pythia_process=llava_pythia_process)
 
-    best_ckpt_info = train_bc(train_dataset=train_dataset, model=model, val_dataset=val_dataset, config=config, sampler_params=sampler_params, tokenizer=tokenizer)
     # save dataset stats
     stats_path = os.path.join(config['training_args'].output_dir, f'dataset_stats.pkl')
     with open(stats_path, 'wb') as f:
         pickle.dump(stats, f)
+    
+    best_ckpt_info = train_bc(train_dataset=train_dataset, model=model, val_dataset=val_dataset, config=config, sampler_params=sampler_params, tokenizer=tokenizer)
+    
 
 
 if __name__ == '__main__':
-    # parse args
+    # if config['training_args'].local_rank == 0 or config['training_args'].local_rank == -1:
+    # debugpy.listen(("0.0.0.0", 5678))
+    # print("Waiting for debugger attach...")
+    # debugpy.wait_for_client()
+    
+    # if not torch.cuda.is_available():
+    #     print(f"Error Cuda is not available exit")
+    #     exit(1)
+    
+    
     model_args, data_args, training_args, action_args, llava_pythia_config, bnb_model_from_pretrained_args = parse_pythia()
     config = {
         'model_args':model_args,
