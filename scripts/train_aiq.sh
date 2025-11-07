@@ -41,7 +41,7 @@ fi
 # assign a unique port based on the Slurm job ID
 MASTER_PORT=$((29500 + SLURM_JOB_ID % 1000))
 # echo "Using MASTER_PORT=$MASTER_PORT"
-deepspeed --master_port $MASTER_PORT --include="localhost:0,1,2,3" ../train_tinyvla.py \
+deepspeed --master_port $MASTER_PORT --include="localhost:4,5,6,7" ../train_tinyvla.py \
   --deepspeed "/home/rsofnc000/Multi-Task-LFD-Framework/repo/TinyVLA/llava-pythia/scripts/zero2.json" \
   --lora_enable True \
   --lora_module 'vit llm' \

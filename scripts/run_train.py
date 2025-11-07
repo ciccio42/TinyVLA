@@ -4,15 +4,15 @@ import os
 from huggingface_hub import snapshot_download
 import shutil
 
-START_ITERATION=2
+START_ITERATION=1
 TINY_VLA_SIZE='1.3B'
-TASK_NAME='ur5e_pick_place_rm_central_spawn'
+TASK_NAME='ur5e_pick_place_rm_12_13_14_15'
 CHECKPOINT_PATH=f"/home/rsofnc000/checkpoint_save_folder/tiny_vla"
 # 'ur5e_pick_place_rm_central_spawn'
 # 'ur5e_pick_place_rm_one_spawn'
 #'ur5e_pick_place_removed_spawn_regions'
 #'ur5e_pick_place_delta_removed_0_5_10_15'
-#'ur5e_pick_place_delta_rm_12_13_14_15'
+#'ur5e_pick_place_rm_12_13_14_15'
 #"ur5e_pick_place_delta_all"
 # "ur5e_pick_place_only_0_4_8_12"
 LORA_R=128 #256 #128 #64

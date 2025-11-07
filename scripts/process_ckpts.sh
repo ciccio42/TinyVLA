@@ -16,12 +16,12 @@ LLM_MODEL_SIZE=1.3B
 CURRENT_DIR=$(pwd)
 
 # path to trained TinyVLA weights
-DATASET_NAME="ur5e_pick_place_rm_one_spawn"
+DATASET_NAME="ur5e_pick_place_delta_removed_0_5_10_15"
 LORA_R=128 #64 #128 #256
 source_dir="/home/rsofnc000/checkpoint_save_folder/tiny_vla/tiny_vla_llava_pythia_lora_${DATASET_NAME}_lora_r_${LORA_R}"
 # new path to save weights
 target_dir="/home/rsofnc000/checkpoint_save_folder/tiny_vla/post_processed_tiny_vla_llava_pythia_lora_${DATASET_NAME}_lora_r_${LORA_R}_processed"
-min_step=8000  # the minimum checkpoint step to copy
+min_step=40000  # the minimum checkpoint step to copy
 
 mkdir -p $target_dir
 
