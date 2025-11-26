@@ -2,12 +2,12 @@
 TinyVLA: Towards Fast, Data-Efficient Vision-Language-Action Models
 for Robotic Manipulation</h1>
 
+# Note
+This is a fork from the original TinyVLA projecr
+
 # Install
 
 1. Clone this repository and navigate to diffusion-vla folder
-```bash
-git clone https://github.com/liyaxuanliyaxuan/TinyVLA
-```
 
 2. Install Package
 ```Shell
@@ -83,8 +83,7 @@ See instruction [here]()
 
 
 ## Original Tiny-VLA Citation
-
-If you find Tiny-VLA useful for your research and applications, please cite using this BibTeX:
+This is a fork from the original repository of the following work.
 ```bibtex
 @misc{
     @inproceedings{wen2024tinyvla,

@@ -1,4 +1,4 @@
-DATASET_NAME=ur5e_pick_place_delta_removed_0_5_10_15
+DATASET_NAME=ur5e_pick_place_rm_12_13_14_15
 LORA_R=128
 OUTPUT=/home/rsofnc000/checkpoint_save_folder/tiny_vla/post_processed_tiny_vla_llava_pythia_lora_${DATASET_NAME}_lora_r_${LORA_R}_processed
 

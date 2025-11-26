@@ -2,7 +2,7 @@
 #SBATCH -A hpc_default
 #SBATCH --exclude=tnode[01-17]
 #SBATCH --exclude=gnode14
-#SBATCH --partition=gpuq
+#SBATCH --partition=aiq
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
@@ -16,7 +16,7 @@ LLM_MODEL_SIZE=1.3B
 CURRENT_DIR=$(pwd)
 
 # path to trained TinyVLA weights
-DATASET_NAME="ur5e_pick_place_delta_removed_0_5_10_15"
+DATASET_NAME="ur5e_pick_place_rm_12_13_14_15"
 LORA_R=128 #64 #128 #256
 source_dir="/home/rsofnc000/checkpoint_save_folder/tiny_vla/tiny_vla_llava_pythia_lora_${DATASET_NAME}_lora_r_${LORA_R}"
 # new path to save weights
