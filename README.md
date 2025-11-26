@@ -3,7 +3,7 @@ TinyVLA: Towards Fast, Data-Efficient Vision-Language-Action Models
 for Robotic Manipulation</h1>
 
 # Note
-This is a fork from the original TinyVLA projecr
+This is a fork from the original TinyVLA project
 
 # Install
 
