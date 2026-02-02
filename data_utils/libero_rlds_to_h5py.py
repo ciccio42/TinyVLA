@@ -347,10 +347,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # External config file that overwrites default config
     parser.add_argument(
-    "--cfg_path", default= '/home/rsofnc000/Multi-Task-LFD-Framework/repo/TinyVLA/data_utils/config/libero_object_no_noops.json')
+    "--cfg_path", default= '/home/A.CARDAMONE7/repo/VLA-Bench/robosuite_test/TinyVLA/data_utils/config/libero_goal_no_noops.json')
     parser.add_argument(
         "--save_dir",
-        default='/home/rsofnc000/Multi-Task-LFD-Framework/repo/TinyVLA/dataset')
+        default='/home/A.CARDAMONE7/datasets/TinyVLA_datasets/h5py_libero_goal_no_noops')
 
     args = parser.parse_args()
 

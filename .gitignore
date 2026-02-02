@@ -177,5 +177,4 @@ dataset/*
 *.png
 scripts/.empty
 scripts/*.txt
-test/*
 llava-pythia/llava_pythia/model/multimodal_projector/__pycache__/*
