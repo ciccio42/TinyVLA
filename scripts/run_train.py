@@ -6,8 +6,8 @@ import shutil
 
 START_ITERATION=1
 TINY_VLA_SIZE='1.3B'
-TASK_NAME='ur5e_pick_place_rm_12_13_14_15'
-CHECKPOINT_PATH=f"/home/rsofnc000/checkpoint_save_folder/tiny_vla"
+TASK_NAME='libero_goal_no_noops'
+CHECKPOINT_PATH=f"/mnt/beegfs/a.cardamone7/checkpoints_saving_folder/tinyvla"
 # 'ur5e_pick_place_rm_central_spawn'
 # 'ur5e_pick_place_rm_one_spawn'
 #'ur5e_pick_place_removed_spawn_regions'
@@ -15,8 +15,8 @@ CHECKPOINT_PATH=f"/home/rsofnc000/checkpoint_save_folder/tiny_vla"
 #'ur5e_pick_place_rm_12_13_14_15'
 #"ur5e_pick_place_delta_all"
 # "ur5e_pick_place_only_0_4_8_12"
-LORA_R=128 #256 #128 #64
-DOWNLOAD_MODEL=True
+LORA_R=64 #256 #128 #64
+DOWNLOAD_MODEL=False
 
 if __name__ == "__main__":
     
@@ -24,26 +24,32 @@ if __name__ == "__main__":
         
         if i == 1 and DOWNLOAD_MODEL:
             # download llava_pythia model
-            os.makedirs(f"{CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}/{TINY_VLA_SIZE}", exist_ok=True)
+            os.makedirs(f"{CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}", exist_ok=True)
             
             # check if the model already exists
             if not os.path.exists(f"{CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}/model.safetensors"):
-                print("Downloading llava_pythia model...")
+                print(f"Downloading llava_pythia model to {CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}...")
                 snapshot_download(
                     repo_id=f"lesjie/Llava-Pythia-{TINY_VLA_SIZE}", 
-                    local_dir=f"{CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}")
+                    local_dir=f"{CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}",
+                    resume_download=True,
+                )
+                print("Download completed!")
             else:
                 # delete the existing files except for model.safetensors
-                print(f"Removing directory {CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}...")
+                print(f"Model already exists. Removing directory {CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}...")
                 shutil.rmtree(f"{CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}")
                 os.makedirs(f"{CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}", exist_ok=True)
+                print(f"Re-downloading llava_pythia model to {CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}...")
                 snapshot_download(
                     repo_id=f"lesjie/Llava-Pythia-{TINY_VLA_SIZE}", 
-                    local_dir=f"{CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}"
-                    )
+                    local_dir=f"{CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}",
+                    resume_download=True,
+                )
+                print("Download completed!")
 
                 try:
-                    shutil.rmtree("/home/rsofnc000/.cache/huggingface")
+                    shutil.rmtree("/home/A.CARDAMONE7/.cache/huggingface")
                 except Exception as e:
                     print(f"Error removing cache directory: {e}")
 
@@ -55,9 +61,9 @@ if __name__ == "__main__":
             resume_from_checkpoint = False
 
         if DOWNLOAD_MODEL:
-            result = subprocess.run(['sbatch', 'train_aiq.sh'] + [f"{TASK_NAME}", f"{resume_from_checkpoint}", f"{LORA_R}", f"{CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}"], capture_output=True, text=True)
+            result = subprocess.run(['sbatch', 'train.sh'] + [f"{TASK_NAME}", f"{resume_from_checkpoint}", f"{LORA_R}", f"{CHECKPOINT_PATH}/llava_pythia_{TASK_NAME}_{LORA_R}/{TINY_VLA_SIZE}"], capture_output=True, text=True)
         else:
-            result = subprocess.run(['sbatch', 'train_aiq.sh'] + [f"{TASK_NAME}", f"{resume_from_checkpoint}", f"{LORA_R}"], capture_output=True, text=True)
+            result = subprocess.run(['sbatch', 'train.sh'] + [f"{TASK_NAME}", f"{resume_from_checkpoint}", f"{LORA_R}"], capture_output=True, text=True)
         if result.returncode != 0:
             print(f"Error submitting job: {result.stderr}")
             exit(1)

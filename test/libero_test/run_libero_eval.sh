@@ -1,17 +1,13 @@
 #!/bin/bash
 
-
 #SBATCH --account=did_robot_learning_359
 #SBATCH --job-name=tinyvla_libero_eval
 #SBATCH --partition=gpuq
 #SBATCH --gres=gpu:4
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
-#SBATCH --exclusive
-#SBATCH --time=6:59:00
-#SBATCH --array=0-11            # 0-2=tasks0-2, 3-5=tasks3-5, 6-8=tasks6-8, 9-11=task9
+#SBATCH --cpus-per-task=16
+#SBATCH --array=0-11           # 0-2=tasks0-2, 3-5=tasks3-5, 6-8=tasks6-8, 9-11=task9
 #SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_libero_goal_seed_%a_%j.out
 #SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_libero_goal_seed_%a_%j.err
 
@@ -45,7 +41,7 @@ echo "ARRAY_ID=$ARRAY_ID → SEED=$SEED, TASKS=$TASK_RANGE"
 
 
 # Command variation settings (MODIFY THESE)
-CHANGE_COMMAND=true          # Set to 'true' to use command variations, 'false' for default
+CHANGE_COMMAND=false          # Set to 'true' to use command variations, 'false' for default
 COMMAND_LEVEL="default"           # Options: 'default', 'l1', 'l2', 'l3', 'all', 'all_no_default'
 
 
@@ -55,7 +51,7 @@ TASK_SUITE="libero_goal"     # Options: libero_goal, libero_spatial, libero_obje
 
 # Model configuration
 MODEL_PATH="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/post_processed_tiny_vla_llava_pythia_lora_libero_goal_no_noops_lora_r_64_processed/checkpoint-54000"
-MODEL_BASE="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/llava_pythia_libero_goal_no_noops_64/1.3B"
+MODEL_BASE="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/parte2_llava_pythia_libero_goal_no_noops_64/1.3B"
 
 
 # Directories

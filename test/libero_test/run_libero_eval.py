@@ -72,7 +72,7 @@ class TaskSuite(str, Enum):
 TASK_MAX_STEPS = {
     TaskSuite.LIBERO_SPATIAL: 220,
     TaskSuite.LIBERO_OBJECT: 280,
-    TaskSuite.LIBERO_GOAL: 200,
+    TaskSuite.LIBERO_GOAL: 300,
     TaskSuite.LIBERO_10: 520,
     TaskSuite.LIBERO_90: 400,
 }
@@ -721,13 +721,13 @@ def run_libero_eval(cfg: GenerateConfig):
         "action_head": action_head,
     }
    
-    set_seed_everywhere(seed=0)
+    set_seed_everywhere(cfg.seed)
     policy = llava_pythia_act_policy(policy_config)
 
 
     # Initialize task suite
     benchmark_dict = benchmark.get_benchmark_dict()
-    task_suite = benchmark_dictcfg.task_suite_name
+    task_suite = benchmark_dict[cfg.task_suite_name]()
     num_tasks = task_suite.n_tasks
     print(f"Evaluating {num_tasks} tasks in {cfg.task_suite_name}")
    
@@ -757,6 +757,9 @@ def run_libero_eval(cfg: GenerateConfig):
         current_level_name = level if level is not None else "default"
         cfg.command_level = level
         cfg.change_command = (level is not None)
+        
+        # Reset seed for each level to ensure reproducibility
+        set_seed_everywhere(cfg.seed)
        
         log_file, local_log_filepath, run_id = setup_logging(cfg)
        

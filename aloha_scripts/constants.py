@@ -16,6 +16,11 @@ TASK_CONFIGS = {
         'episode_len': 1000, #max length of the episode,
         'camera_names': ['image', 'wrist_image'] # define the camera names which are used as the key when reading data
     },
+    'libero_goal_no_noops':{
+        'dataset_dir': '/home/A.CARDAMONE7/datasets/TinyVLA_datasets/h5py_libero_goal_no_noops/libero_goal_no_noops_succ_t0001_s-0-0', # define the path of the dataset
+        'episode_len': 1000, #max length of the episode,
+        'camera_names': ['image', 'wrist_image'] # define the camera names which are used as the key when reading data
+    },
     'ur5e_pick_place_delta_all':{
         'dataset_dir': DATA_DIR + '/ur5e_pick_place_delta_all_succ_t0001_s-0-0', 
         'episode_len': 1000, #max length of the episode,

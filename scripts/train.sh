@@ -1,12 +1,13 @@
 #!/bin/bash
 
-#SBATCH -A hpc_default
+#SBATCH --account=did_robot_learning_359
+#SBATCH --job-name=train_tinyvla
 #SBATCH --partition=gpuq          # Partition (queue) name
 #SBATCH --nodes=1                   # Number of nodes
 #SBATCH --ntasks-per-node=1           # Only ONE task per node!
 #SBATCH --gres=gpu:4                # Request 4 GPUs per node
 #SBATCH --cpus-per-task=64             # Adjust for data loading, etc.
-#SBATCH --exclude=gnode14
+#SBATCH --exclusive
 #SBATCH --export=ALL
 
 export CUDA_VISIBLE_DEVICES=0,1,2,3
@@ -20,8 +21,8 @@ ACTION_HEAD=droid_diffusion # specify action policy head type
 TASK_NAME="${1:-libero_object_no_noops}"
 RESUME_FROM_CHECKPOINT="${2:-False}"
 LORA_R="${3:-64}"
-MODEL_NAME_PATH="${4:-/home/rsofnc000/checkpoint_save_folder/tiny_vla/llava_pythia/1.3B}"
-OUTPUT=/home/rsofnc000/checkpoint_save_folder/tiny_vla/tiny_vla_llava_pythia_lora_${TASK_NAME}_lora_r_${LORA_R}
+MODEL_NAME_PATH="${4:-/mnt/beegfs/a.cardamone7/checkpoints_saving_folder/tinyvla/llava_pythia_libero_goal_no_noops_64/1.3B}"
+OUTPUT=/mnt/beegfs/a.cardamone7/checkpoints_saving_folder/tinyvla/tiny_vla_llava_pythia_lora_${TASK_NAME}_lora_r_${LORA_R}
 
 
 echo "Training on dataset: $TASK_NAME"
@@ -42,7 +43,7 @@ fi
 MASTER_PORT=$((29500 + SLURM_JOB_ID % 1000))
 # echo "Using MASTER_PORT=$MASTER_PORT"
 deepspeed --master_port $MASTER_PORT --include="localhost:0,1,2,3" ../train_tinyvla.py \
-  --deepspeed "/home/rsofnc000/Multi-Task-LFD-Framework/repo/TinyVLA/llava-pythia/scripts/zero2.json" \
+  --deepspeed "/home/A.CARDAMONE7/repo/VLA-Bench/robosuite_test/TinyVLA/llava-pythia/scripts/zero2.json" \
   --lora_enable True \
   --lora_module 'vit llm' \
   --load_pretrain False \
@@ -67,7 +68,7 @@ deepspeed --master_port $MASTER_PORT --include="localhost:0,1,2,3" ../train_tiny
   --per_device_train_batch_size 64 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
-  --save_steps 1000 \
+  --save_steps 500 \
   --save_total_limit 50 \
   --seed 0 \
   --learning_rate 2e-4 \
@@ -92,7 +93,7 @@ deepspeed --master_port $MASTER_PORT --include="localhost:0,1,2,3" ../train_tiny
 for dir in "$OUTPUT"/*/ ; do
     # 检查文件夹名称是否包含'checkpoint'
     if [[ "$(basename "$dir")" == *"checkpoint"* ]]; then
-        cp llava-pythia/preprocessor_config.json $dir
+        cp /home/A.CARDAMONE7/repo/VLA-Bench/robosuite_test/TinyVLA/scripts/preprocessor_config.json $dir
     fi
 done
 

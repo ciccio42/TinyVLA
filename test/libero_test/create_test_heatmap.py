@@ -10,7 +10,7 @@ import matplotlib.patches as patches
 import glob
 import pickle as pkl
 
-TABLE_SIZE = (0.7, 0.7)  # height (y), width (x)
+TABLE_SIZE = (1.0, 1.0)  # height (y), width (x)
 # Enable remote debugging
 # debugpy.listen(('0.0.0.0', 5678)) 
 # print("Waiting for debugger to attach...")
@@ -52,7 +52,7 @@ def heat_map(task_distribution, task_path, task_name):
             table_map[x, y] += 1
 
     # Set crop range in cm for visual focus (adjust as needed)
-    y_min, y_max = -30, 30
+    y_min, y_max = -45, 20
     x_min, x_max = -35, 35
     task_title = task_name.replace("_", " ").title()
 
@@ -66,7 +66,7 @@ def heat_map(task_distribution, task_path, task_name):
     cropped_map = table_map[y_min_px:y_max_px, x_min_px:x_max_px]
 
     # --- Plotting ---
-    fig, ax = plt.subplots(figsize=(10, 10))
+    fig, ax = plt.subplots(figsize=(10, 14))
     plt.title(f"Command: '{task_title}'")
     plt.xlabel("Y Axis (cm)")
     plt.ylabel("X Axis (cm)")
@@ -113,8 +113,8 @@ if __name__ == "__main__":
         debugpy.wait_for_client()
     
     
-    test_path = "/home/A.CARDAMONE7/outputs/rollouts/libero_goal/tinyvla/default"
-    dataset_config_file = "/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/tiny_vla_llava_pythia_lora_libero_goal_no_noops_lora_r_64/dataset_stats.pkl"
+    test_path = "/home/A.CARDAMONE7/outputs/rollouts/libero_goal/tinyvla/l1"
+    dataset_config_file = "/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/parte2_tiny_vla_llava_pythia_lora_libero_goal_no_noops_lora_r_64/dataset_stats.pkl"
     dataset_config = pkl.load(open(dataset_config_file, "rb"))
                               
     run_folders = glob.glob(os.path.join(test_path, "run_*"))

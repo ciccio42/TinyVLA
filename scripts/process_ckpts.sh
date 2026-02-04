@@ -1,8 +1,6 @@
 #!/bin/bash
-#SBATCH -A hpc_default
-#SBATCH --exclude=tnode[01-17]
-#SBATCH --exclude=gnode14
-#SBATCH --partition=aiq
+#SBATCH --account=did_robot_learning_359
+#SBATCH --partition=gpuq
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
@@ -16,12 +14,12 @@ LLM_MODEL_SIZE=1.3B
 CURRENT_DIR=$(pwd)
 
 # path to trained TinyVLA weights
-DATASET_NAME="ur5e_pick_place_rm_12_13_14_15"
-LORA_R=128 #64 #128 #256
-source_dir="/home/rsofnc000/checkpoint_save_folder/tiny_vla/tiny_vla_llava_pythia_lora_${DATASET_NAME}_lora_r_${LORA_R}"
+DATASET_NAME="libero_goal_no_noops"
+LORA_R=64 #64 #128 #256
+source_dir="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/tiny_vla_llava_pythia_lora_${DATASET_NAME}_lora_r_${LORA_R}"
 # new path to save weights
-target_dir="/home/rsofnc000/checkpoint_save_folder/tiny_vla/post_processed_tiny_vla_llava_pythia_lora_${DATASET_NAME}_lora_r_${LORA_R}_processed"
-min_step=40000  # the minimum checkpoint step to copy
+target_dir="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/post_processed_tiny_vla_llava_pythia_lora_${DATASET_NAME}_lora_r_${LORA_R}_processed"
+min_step=500  # the minimum checkpoint step to copy
 
 mkdir -p $target_dir
 
