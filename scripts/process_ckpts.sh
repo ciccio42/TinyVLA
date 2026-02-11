@@ -19,7 +19,7 @@ LORA_R=64 #64 #128 #256
 source_dir="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/tiny_vla_llava_pythia_lora_${DATASET_NAME}_lora_r_${LORA_R}"
 # new path to save weights
 target_dir="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/post_processed_tiny_vla_llava_pythia_lora_${DATASET_NAME}_lora_r_${LORA_R}_processed"
-min_step=500  # the minimum checkpoint step to copy
+min_step=20000  # the minimum checkpoint step to copy
 
 mkdir -p $target_dir
 

@@ -156,9 +156,9 @@ def save_rollout_video(rollout_traj, idx, success, task_description, log_file=No
     """Saves an MP4 replay of an episode."""
     # Build directory path based on configurations
     if change_command and command_level:
-        rollout_dir = f"/home/A.CARDAMONE7/outputs/rollouts/libero_goal/tinyvla/{command_level}/run_{run}"
+        rollout_dir = f"/home/A.CARDAMONE7/outputs/rollouts/libero_goal/tinyvla/checkpoint_20000/{command_level}/run_{run}"
     else:
-        rollout_dir = f"/home/A.CARDAMONE7/outputs/rollouts/libero_goal/tinyvla/default/run_{run}"
+        rollout_dir = f"/home/A.CARDAMONE7/outputs/rollouts/libero_goal/tinyvla/checkpoint_20000/default/run_{run}"
     
     os.makedirs(rollout_dir, exist_ok=True)
     

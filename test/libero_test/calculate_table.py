@@ -11,6 +11,23 @@ from collections import defaultdict
 # MAPPING COMPLETO DELLE VARIAZIONI
 # =========================
 
+def get_task_order():
+    """
+    Ordine fisso dei task originali per la tabella Excel
+    """
+    return [
+        "Open the middle layer of the drawer",
+        "Put the bowl on the stove",
+        "Put the wine bottle on the top of the drawer",
+        "Open the top layer of the drawer and put the bowl inside",
+        "Put the bowl on the top of the drawer",
+        "Push the plate to the front of the stove",
+        "Put the cream cheese in the bowl",
+        "Turn on the stove",
+        "Put the bowl on the plate",
+        "Put the wine bottle on the rack"
+    ]
+
 def get_variation_mapping():
     """
     Mapping completo: ogni variazione → task originale
@@ -215,22 +232,21 @@ def write_excel_comparison(output_xlsx, txt_files_by_seed):
     # Ottieni il mapping variazione → originale
     variation_to_original = get_variation_mapping()
     
-    # Crea lista di task originali nell'ordine del file txt
-    orig_tasks_ordered = []
-    variation_tasks_ordered = []
-    
+    # Crea mapping inverso: originale → variazione (trovata nei file)
+    original_to_variation = {}
     print("\n[INFO] Identificazione variazioni nei file...")
     for task in task_order:
         task_lower = task.lower()
         if task_lower in variation_to_original:
             orig = variation_to_original[task_lower]
-            orig_tasks_ordered.append(orig)
-            variation_tasks_ordered.append(task)
+            original_to_variation[orig] = task
             print(f"  ✓ '{task}' → '{orig}'")
         else:
             print(f"  ⚠ Non mappata: '{task}'")
-            orig_tasks_ordered.append(task)
-            variation_tasks_ordered.append(task)
+            original_to_variation[task] = task
+    
+    # Usa l'ordine fisso dei task
+    fixed_task_order = get_task_order()
     
     # Crea workbook
     wb = Workbook()
@@ -262,8 +278,10 @@ def write_excel_comparison(output_xlsx, txt_files_by_seed):
     
     print("\n[INFO] Generazione tabella Excel...")
     
-    # Processa ogni task NELL'ORDINE DEL FILE TXT
-    for orig_task, variation in zip(orig_tasks_ordered, variation_tasks_ordered):
+    # Processa ogni task NELL'ORDINE FISSO
+    for orig_task in fixed_task_order:
+        # Trova la variazione corrispondente trovata nei file
+        variation = original_to_variation.get(orig_task, orig_task)
         
         seed_rates = []
         seed_completions = []
@@ -299,7 +317,7 @@ def write_excel_comparison(output_xlsx, txt_files_by_seed):
                 std_rate = math.sqrt(sum((r - mean_rate) ** 2 for r in valid_rates) / (len(valid_rates) - 1))
             else:
                 std_rate = 0.0
-            mean_std_display = f"{mean_rate:.1f} ± {std_rate:.1f}%"
+            mean_std_display = f"{mean_rate:.1f}% ± {std_rate:.1f}%"
         else:
             mean_rate = float('nan')
             std_rate = float('nan')
@@ -346,19 +364,24 @@ def write_excel_comparison(output_xlsx, txt_files_by_seed):
             total_success = sum(c[0] for c in all_seed_completions[seed_idx])
             total_episodes = sum(c[1] for c in all_seed_completions[seed_idx])
             
-            final_row.append(f"{mean:.2f} ± {std:.2f}")
+            final_row.append(f"{mean:.2f}% ± {std:.2f}%")
             final_row.append(f"{total_success}/{total_episodes}")
         else:
             final_row.append("N/A")
             final_row.append("0/0")
     
-    # Media globale
-    all_rates_combined = [r for seed_rates in all_seed_rates for r in seed_rates]
-    if all_rates_combined:
-        global_mean = sum(all_rates_combined) / len(all_rates_combined)
-        if len(all_rates_combined) > 1:
+    # Media globale (standard VLA: std tra le medie dei seed, non tra tutti i valori)
+    seed_means = []
+    for seed_idx in range(3):
+        if all_seed_rates[seed_idx]:
+            seed_mean = sum(all_seed_rates[seed_idx]) / len(all_seed_rates[seed_idx])
+            seed_means.append(seed_mean)
+    
+    if seed_means:
+        global_mean = sum(seed_means) / len(seed_means)
+        if len(seed_means) > 1:
             global_std = math.sqrt(
-                sum((r - global_mean) ** 2 for r in all_rates_combined) / (len(all_rates_combined) - 1)
+                sum((m - global_mean) ** 2 for m in seed_means) / (len(seed_means) - 1)
             )
         else:
             global_std = 0.0
@@ -366,7 +389,7 @@ def write_excel_comparison(output_xlsx, txt_files_by_seed):
         global_success = sum(sum(c[0] for c in all_seed_completions[i]) for i in range(3))
         global_episodes = sum(sum(c[1] for c in all_seed_completions[i]) for i in range(3))
         
-        final_row.append(f"{global_mean:.2f} ± {global_std:.2f}")
+        final_row.append(f"{global_mean:.2f}% ± {global_std:.2f}%")
         final_row.append(f"{global_success}/{global_episodes}")
     else:
         final_row.append("N/A")
@@ -399,7 +422,7 @@ def write_excel_comparison(output_xlsx, txt_files_by_seed):
 # AUTO-DETECT FILES
 # =========================
 
-def find_txt_files_by_seed(base_dir, pattern_prefix="tinyvla_eval"):
+def find_txt_files_by_seed(base_dir, pattern_prefix="EVAL-libero_goal-tiny_vla"):
     """
     Trova automaticamente i file .txt per ogni seed
     Pattern: {pattern_prefix}_*_seed{0,1,2}_*.txt
@@ -407,11 +430,11 @@ def find_txt_files_by_seed(base_dir, pattern_prefix="tinyvla_eval"):
     txt_files_by_seed = {0: [], 1: [], 2: []}
     
     print(f"\n[INFO] Cercando file .txt in: {base_dir}")
-    print(f"Pattern: {pattern_prefix}_*_seed*_*.txt")
+    print(f"Pattern: {pattern_prefix}*seed*{{0,1,2}}*.txt")
     
     for seed_idx in range(3):
-        # Cerca tutti i file per questo seed
-        pattern = os.path.join(base_dir, f"{pattern_prefix}_*seed{seed_idx}*.txt")
+        # Cerca tutti i file per questo seed (supporta sia _ che - come separatore)
+        pattern = os.path.join(base_dir, f"{pattern_prefix}*seed{seed_idx}*.txt")
         matches = glob.glob(pattern)
         
         # Ordina per nome file (task groups)
@@ -451,8 +474,8 @@ def main():
     
     parser.add_argument(
         "--pattern",
-        default="tinyvla_eval",
-        help="Prefix pattern per auto-detect (default: tinyvla_eval)"
+        default="EVAL-libero_goal-tiny_vla",
+        help="Prefix pattern per auto-detect (default: EVAL-libero_goal-tiny_vla)"
     )
     parser.add_argument(
         "--seed0",

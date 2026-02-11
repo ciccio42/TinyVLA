@@ -1,15 +1,15 @@
 #!/bin/bash
 
 #SBATCH --account=did_robot_learning_359
-#SBATCH --job-name=tinyvla_libero_eval
+#SBATCH --job-name=20000_tinyvla_libero_eval
 #SBATCH --partition=gpuq
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --array=0-11           # 0-2=tasks0-2, 3-5=tasks3-5, 6-8=tasks6-8, 9-11=task9
-#SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_libero_goal_seed_%a_%j.out
-#SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_libero_goal_seed_%a_%j.err
+#SBATCH --array=1        # 0-2=tasks0-2, 3-5=tasks3-5, 6-8=tasks6-8, 9-11=task9
+#SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_20000_libero_goal_l1_seed_%a_%j.out
+#SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_20000_libero_goal_l1_seed_%a_%j.err
 
 
 # ==========================================
@@ -25,10 +25,10 @@ TASK_GROUP=$((ARRAY_ID % 4))     # 0=tasks0-2, 1=tasks3-5, 2=tasks6-8, 3=task9
 
 # Mappa task group → range
 case $TASK_GROUP in
-    0) TASK_RANGE="0-2";   ID_NOTE_SUFFIX="tasks0-2" ;;
-    1) TASK_RANGE="3-5";   ID_NOTE_SUFFIX="tasks3-5" ;;
-    2) TASK_RANGE="6-8";   ID_NOTE_SUFFIX="tasks6-8" ;;
-    3) TASK_RANGE="9-9";   ID_NOTE_SUFFIX="task9"   ;;
+    0) TASK_RANGE="0-2";   TASK_GROUP_NAME="tasks0-2" ;;
+    1) TASK_RANGE="3-5";   TASK_GROUP_NAME="tasks3-5" ;;
+    2) TASK_RANGE="6-8";   TASK_GROUP_NAME="tasks6-8" ;;
+    3) TASK_RANGE="9-9";   TASK_GROUP_NAME="task9"   ;;
 esac
 
 
@@ -41,8 +41,8 @@ echo "ARRAY_ID=$ARRAY_ID → SEED=$SEED, TASKS=$TASK_RANGE"
 
 
 # Command variation settings (MODIFY THESE)
-CHANGE_COMMAND=false          # Set to 'true' to use command variations, 'false' for default
-COMMAND_LEVEL="default"           # Options: 'default', 'l1', 'l2', 'l3', 'all', 'all_no_default'
+CHANGE_COMMAND=true   # Set to 'true' to use command variations, 'false' for default
+COMMAND_LEVEL="l1"    # Options: 'default', 'l1', 'l2', 'l3', 'all', 'all_no_default'
 
 
 # Task suite
@@ -50,7 +50,7 @@ TASK_SUITE="libero_goal"     # Options: libero_goal, libero_spatial, libero_obje
 
 
 # Model configuration
-MODEL_PATH="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/post_processed_tiny_vla_llava_pythia_lora_libero_goal_no_noops_lora_r_64_processed/checkpoint-54000"
+MODEL_PATH="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/post_processed_tiny_vla_llava_pythia_lora_libero_goal_no_noops_lora_r_64_processed/checkpoint-20000"
 MODEL_BASE="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/parte2_llava_pythia_libero_goal_no_noops_64/1.3B"
 
 
@@ -72,9 +72,9 @@ ENV_IMG_RES=256
 
 
 if [ "$CHANGE_COMMAND" == "true" ]; then
-    ID_NOTE_SUFFIX="tinyvla_${TASK_SUITE}_cmd_${COMMAND_LEVEL}_seed${SEED}"
+    ID_NOTE_SUFFIX="tinyvla_${TASK_SUITE}_20000_${COMMAND_LEVEL}_seed${SEED}_${TASK_GROUP_NAME}"
 else
-    ID_NOTE_SUFFIX="tinyvla_${TASK_SUITE}_default_seed${SEED}"
+    ID_NOTE_SUFFIX="tinyvla_${TASK_SUITE}_default_20000_seed${SEED}_${TASK_GROUP_NAME}"
 fi
 
 

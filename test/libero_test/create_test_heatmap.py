@@ -113,8 +113,8 @@ if __name__ == "__main__":
         debugpy.wait_for_client()
     
     
-    test_path = "/home/A.CARDAMONE7/outputs/rollouts/libero_goal/tinyvla/l1"
-    dataset_config_file = "/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/parte2_tiny_vla_llava_pythia_lora_libero_goal_no_noops_lora_r_64/dataset_stats.pkl"
+    test_path = "/home/A.CARDAMONE7/outputs/rollouts/libero_goal/tinyvla/checkpoint_20000/default"
+    dataset_config_file = "/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/tiny_vla_llava_pythia_lora_libero_goal_no_noops_lora_r_64/dataset_stats.pkl"
     dataset_config = pkl.load(open(dataset_config_file, "rb"))
                               
     run_folders = glob.glob(os.path.join(test_path, "run_*"))

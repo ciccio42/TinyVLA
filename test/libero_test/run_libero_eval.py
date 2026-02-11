@@ -260,6 +260,7 @@ class GenerateConfig:
     run_id_note: Optional[str] = None                # Extra note to add to end of run ID for logging
     local_log_dir: str = "./experiments/logs"        # Local directory for eval logs
     summary_file: Optional[str] = None               # Path to summary CSV file
+    checkpoint_size: int = 20000                      
 
 
     use_wandb: bool = False                          # Whether to also log results in Weights & Biases
@@ -307,6 +308,8 @@ def setup_logging(cfg: GenerateConfig):
     if cfg.change_command and cfg.command_level:
         run_id += f"--{cfg.command_level}"
 
+    if cfg.checkpoint_size > 0:
+        run_id += f"--ckpt{cfg.checkpoint_size}"
 
     os.makedirs(cfg.local_log_dir, exist_ok=True)
     local_log_filepath = os.path.join(cfg.local_log_dir, run_id + ".txt")
