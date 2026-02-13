@@ -7,9 +7,9 @@
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --array=2          # Array index = seed (0, 1, 2 for multi-seed)
-#SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_54000_task_comp_l1_seed_%a_%j.out
-#SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_54000_task_comp_l1_seed_%a_%j.err
+#SBATCH --array=0         # 3 seeds x 2 parts = 6 jobs
+#SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_54000_task_comp_l1_arr%a_%j.out
+#SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_54000_task_comp_l1_arr%a_%j.err
 
 # ==========================================
 # TinyVLA - Task Composition L1 Evaluation
@@ -17,10 +17,29 @@
 # Tests task-level generalization: the model must apply known
 # primitives (pick-place, open drawer, etc.) to new object/target
 # combinations never seen during training.
+#
+# Split: 5 tasks across 2 nodes per seed
+#   Part 0 → tasks 0,1,2  (3 tasks)
+#   Part 1 → tasks 3,4    (2 tasks)
+# Array mapping: index = seed * 2 + part
+#   0 → seed 0, part 0   |   1 → seed 0, part 1
+#   2 → seed 1, part 0   |   3 → seed 1, part 1
+#   4 → seed 2, part 0   |   5 → seed 2, part 1
 # ==========================================
 
-SEED=$SLURM_ARRAY_TASK_ID
-ID_NOTE="tinyvla_54000_task_comp_l1_seed_${SEED}"
+# Decode seed and part from array index
+SEED=$((SLURM_ARRAY_TASK_ID / 2))
+PART=$((SLURM_ARRAY_TASK_ID % 2))
+
+if [ $PART -eq 0 ]; then
+    TASK_START=0
+    TASK_END=3
+else
+    TASK_START=3
+    TASK_END=5
+fi
+
+ID_NOTE="tinyvla_54000_task_comp_l1_seed_${SEED}_part${PART}"
 
 # Model configuration
 MODEL_PATH="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/post_processed_tiny_vla_llava_pythia_lora_libero_goal_no_noops_lora_r_64_processed/checkpoint-54000"
@@ -36,8 +55,9 @@ echo "=========================================="
 echo "TinyVLA Task Composition L1 Evaluation"
 echo "=========================================="
 echo "Job ID: $SLURM_JOB_ID"
-echo "Array Task ID (Seed): $SLURM_ARRAY_TASK_ID"
+echo "Array Task ID: $SLURM_ARRAY_TASK_ID"
 echo "Seed: $SEED"
+echo "Part: $PART (tasks $TASK_START to $((TASK_END - 1)))"
 echo "Model: $MODEL_PATH"
 echo "Model Base: $MODEL_BASE"
 echo "Start time: $(date)"
@@ -85,8 +105,9 @@ srun python run_libero_eval_task_comp.py \
     --seed ${SEED} \
     --run_number ${SEED} \
     --run_id_note ${ID_NOTE} \
+    --task_start ${TASK_START} \
+    --task_end ${TASK_END} \
     --local_log_dir ${OUTPUT_DIR}/logs \
-    --summary_file ${OUTPUT_DIR}/logs/summary/task_comp_l1/tinyvla_seed${SEED}.json \
     --use_wandb False \
     --debug False
 
@@ -99,7 +120,7 @@ if [ $EXIT_CODE -eq 0 ]; then
 else
     echo "Evaluation failed with exit code: $EXIT_CODE"
 fi
-echo "Seed: $SEED"
+echo "Seed: $SEED | Part: $PART (tasks $TASK_START-$((TASK_END - 1)))"
 echo "Finish time: $(date)"
 echo "=========================================="
 

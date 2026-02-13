@@ -16,7 +16,38 @@ TABLE_SIZE = (1.0, 1.0)  # height (y), width (x)
 # print("Waiting for debugger to attach...")
 # debugpy.wait_for_client()
 
-def heat_map(task_distribution, task_path, task_name):
+def compute_heatmap_data(task_distribution):
+    """Compute heatmap data from trajectories (without plotting)."""
+    px_resolution = 0.5  # in cm
+    table_size_cm = np.array(TABLE_SIZE) * 100
+    table_size_px = (table_size_cm / px_resolution).astype(np.int32)
+    table_map = np.zeros((table_size_px[0], table_size_px[1]))
+
+    for episode_idx, trajectory in enumerate(task_distribution):
+        trajectory = np.array(trajectory)[:, :2]
+        px_traj = (trajectory * 100 / px_resolution).astype(np.int32)
+        px_traj[:, 0] = table_map.shape[0] // 2 + px_traj[:, 0]
+        px_traj[:, 1] = table_map.shape[1] // 2 + px_traj[:, 1]
+        px_traj = px_traj[
+            (px_traj[:, 0] >= 0) & (px_traj[:, 0] < table_map.shape[0]) &
+            (px_traj[:, 1] >= 0) & (px_traj[:, 1] < table_map.shape[1])
+        ]
+        for x, y in px_traj:
+            table_map[x, y] += 1
+
+    # Crop to focus area
+    y_min, y_max = -45, 20
+    x_min, x_max = -35, 35
+    y_min_px = int((y_min + table_size_cm[0] / 2) / px_resolution)
+    y_max_px = int((y_max + table_size_cm[0] / 2) / px_resolution)
+    x_min_px = int((x_min + table_size_cm[1] / 2) / px_resolution)
+    x_max_px = int((x_max + table_size_cm[1] / 2) / px_resolution)
+    cropped_map = table_map[y_min_px:y_max_px, x_min_px:x_max_px]
+    
+    return cropped_map
+
+
+def heat_map(task_distribution, task_path, task_name, command_level="DEFAULT"):
     # Each px represents 0.5x0.5 cm (0.005m x 0.005m)
     px_resolution = 0.5  # in cm
 
@@ -67,13 +98,12 @@ def heat_map(task_distribution, task_path, task_name):
 
     # --- Plotting ---
     fig, ax = plt.subplots(figsize=(10, 14))
-    plt.title(f"Command: '{task_title}'")
+    plt.title(f"[{command_level.upper()}] \"{task_title}\"")
     plt.xlabel("Y Axis (cm)")
     plt.ylabel("X Axis (cm)")
 
     norm = mcolors.LogNorm(vmin=1, vmax=np.max(cropped_map) if np.max(cropped_map) > 0 else 1)
     im = ax.imshow(cropped_map, cmap='plasma', origin='upper', norm=norm)
-    # ax.invert_yaxis()  # <-- This flips the y-axis so (0,0) is bottom-left
     ax.invert_xaxis()  # Invert x-axis to match the coordinate system
     
     # Axis ticks (every 10 cm)
@@ -98,12 +128,96 @@ def heat_map(task_distribution, task_path, task_name):
     plt.close()
 
     print(f"Saved heatmap to {save_path}")
+    return cropped_map
+
+
+def create_combined_heatmap(heatmaps_data, task_path, model_name, command_level):
+    """
+    Create a combined horizontal image with all heatmaps side by side.
+    
+    Args:
+        heatmaps_data: dict of {task_name: cropped_map}
+        task_path: path to save the combined image
+        model_name: model name for the title (e.g., "TinyVLA")
+        command_level: command level (e.g., "L1", "L2")
+    """
+    if not heatmaps_data:
+        print("WARNING: No heatmaps to combine")
+        return
+    
+    n_tasks = len(heatmaps_data)
+    task_names = list(heatmaps_data.keys())
+    
+    # Calculate global vmax for consistent color scaling
+    global_vmax = max(np.max(hm) for hm in heatmaps_data.values() if np.max(hm) > 0)
+    global_vmax = max(global_vmax, 1)
+    
+    # Create figure with subplots
+    fig_width = 5 * n_tasks + 1  # 5 inches per task + colorbar space
+    fig, axes = plt.subplots(1, n_tasks, figsize=(fig_width, 8))
+    
+    if n_tasks == 1:
+        axes = [axes]
+    
+
+    norm = mcolors.LogNorm(vmin=1, vmax=global_vmax)
+    
+    # Crop range for axis labels
+    y_min, y_max = -45, 20
+    x_min, x_max = -35, 35
+    px_resolution = 0.5
+    
+    for idx, (ax, task_name) in enumerate(zip(axes, task_names)):
+        cropped_map = heatmaps_data[task_name]
+        task_title = task_name.replace("_", " ").title()
+        
+        im = ax.imshow(cropped_map, cmap='plasma', origin='upper', norm=norm)
+        ax.invert_xaxis()
+        
+        # Set title (task command)
+        ax.set_title(f'"{task_title}"', fontsize=9, wrap=True)
+        
+        # Axis ticks (every 10 cm)
+        ticks_x = np.arange(0, cropped_map.shape[1], int(10 / px_resolution))
+        ticks_y = np.arange(0, cropped_map.shape[0], int(10 / px_resolution))
+        tick_labels_x = np.arange(x_min, x_max, 10)
+        tick_labels_y = np.arange(y_min, y_max, 10)
+        
+        ax.set_xticks(ticks_x)
+        ax.set_xticklabels(tick_labels_x, fontsize=7)
+        ax.set_yticks(ticks_y)
+        ax.set_yticklabels(tick_labels_y, fontsize=7)
+        
+        if idx == 0:
+            ax.set_ylabel("X Axis (cm)", fontsize=9)
+        ax.set_xlabel("Y Axis (cm)", fontsize=9)
+    
+    # Add colorbar on the right
+    cbar_ax = fig.add_axes([0.92, 0.15, 0.015, 0.65])
+    cbar = fig.colorbar(im, cax=cbar_ax)
+    cbar.set_label("Trajectory Density (log scale)", fontsize=10)
+    
+    plt.subplots_adjust(left=0.05, right=0.9, top=0.92, bottom=0.08, wspace=0.15)
+    
+    # Save combined image
+    os.makedirs(task_path, exist_ok=True)
+    save_path = os.path.join(task_path, f"combined_heatmaps_{command_level.lower()}.png")
+    plt.savefig(save_path, bbox_inches='tight', dpi=150)
+    plt.close()
+    
+    print(f"Saved combined heatmap to {save_path}")
 
 
 
 if __name__ == "__main__":
-    argparser = argparse.ArgumentParser(description="Create heatmaps for test trajectories")
+    argparser = argparse.ArgumentParser(description="Create heatmaps for TinyVLA test trajectories")
     argparser.add_argument('--debug', action='store_true', help="Enable remote debugging")
+    argparser.add_argument('--test_path', type=str, 
+                          default="/home/A.CARDAMONE7/outputs/rollouts/libero_goal/task_composition/tinyvla/task_comp_l1",
+                          help="Path to rollouts folder")
+    argparser.add_argument('--dataset_config', type=str,
+                          default="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/tiny_vla_llava_pythia_lora_libero_goal_no_noops_lora_r_64/dataset_stats.pkl",
+                          help="Path to dataset_stats.pkl for denormalization")
     args = argparser.parse_args()
     
     if args.debug:
@@ -112,19 +226,40 @@ if __name__ == "__main__":
         print("Waiting for debugger to attach...")
         debugpy.wait_for_client()
     
+    test_path = args.test_path
     
-    test_path = "/home/A.CARDAMONE7/outputs/rollouts/libero_goal/tinyvla/checkpoint_20000/default"
-    dataset_config_file = "/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/tiny_vla_llava_pythia_lora_libero_goal_no_noops_lora_r_64/dataset_stats.pkl"
-    dataset_config = pkl.load(open(dataset_config_file, "rb"))
+    # Determine command level from path
+    if "task_comp_l1" in test_path or "/l1" in test_path.lower():
+        command_level = "L1"
+    elif "task_comp_l2" in test_path or "/l2" in test_path.lower():
+        command_level = "L2"
+    elif "task_comp_l3" in test_path or "/l3" in test_path.lower():
+        command_level = "L3"
+    else:
+        command_level = "DEFAULT"
+    
+    model_name = "TinyVLA"
+    
+    print(f"\n{'='*80}")
+    print(f"Processing: {test_path}")
+    print(f"Model: {model_name}")
+    print(f"Command level: {command_level}")
+    print(f"{'='*80}\n")
+    
+    # Load dataset config
+    if os.path.exists(args.dataset_config):
+        dataset_config = pkl.load(open(args.dataset_config, "rb"))
+        print(f"Loaded dataset config from: {args.dataset_config}")
+    else:
+        dataset_config = None
+        print("WARNING: Dataset config not found - assuming states are already denormalized")
                               
     run_folders = glob.glob(os.path.join(test_path, "run_*"))
 
     tasks_trajectories = {}
 
-
     for run in run_folders:
         trajectories_npy = glob.glob(os.path.join(run, "*.npy"))
-
         trajectories_npy.sort(key=lambda x: int(os.path.basename(x).split("episode=")[-1].split("--")[0]))
 
         for trajectory_npy in trajectories_npy:
@@ -138,15 +273,29 @@ if __name__ == "__main__":
                 
             states = np.array(data['states'])[:, :3]
             
-            # denormalize positions
-            qpos_mean = dataset_config['qpos_mean'][:3]
-            gpos_std = dataset_config['qpos_std'][:3]
-            states = (states * gpos_std) + qpos_mean
+            # denormalize positions if config available
+            if dataset_config is not None:
+                qpos_mean = dataset_config['qpos_mean'][:3]
+                qpos_std = dataset_config['qpos_std'][:3]
+                states = (states * qpos_std) + qpos_mean
             
             tasks_trajectories[task_name].append(states)  # list of [x, y, z]
             
     # Create heatmaps for each task
-    for task_name, episodes in tasks_trajectories.items():
-        print(f"Creating heatmap for task: {task_name} with {len(episodes)} episodes")
-        heat_map(episodes, test_path, task_name)
+    if tasks_trajectories:
+        heatmaps_data = {}
+        for task_name, episodes in tasks_trajectories.items():
+            print(f"Creating heatmap for task: {task_name} with {len(episodes)} episodes")
+            cropped_map = heat_map(episodes, test_path, task_name, command_level)
+            heatmaps_data[task_name] = cropped_map
+        
+        # Create combined heatmap
+        print(f"\nCreating combined heatmap...")
+        create_combined_heatmap(heatmaps_data, test_path, model_name, command_level)
+    else:
+        print(f"WARNING: No trajectories found in {test_path}")
+    
+    print("\n" + "="*80)
+    print("HEATMAP GENERATION COMPLETE")
+    print("="*80)
         

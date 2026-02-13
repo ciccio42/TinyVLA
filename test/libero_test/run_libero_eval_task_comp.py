@@ -281,7 +281,6 @@ class GenerateConfig:
     # Utils
     run_id_note: Optional[str] = None
     local_log_dir: str = "./experiments/logs"
-    summary_file: Optional[str] = None
     checkpoint_size: int = 20000
 
     use_wandb: bool = False
@@ -292,6 +291,10 @@ class GenerateConfig:
     run_number: int = 0
     debug: bool = False
     local_rank: int = 0
+
+    # Task subset (for splitting across nodes)
+    task_start: int = 0
+    task_end: int = -1  # -1 means all tasks
     # fmt: on
 
 
@@ -655,12 +658,19 @@ def eval_task_comp(cfg: GenerateConfig) -> float:
     policy = llava_pythia_act_policy(policy_config)
 
     # Load custom tasks
-    custom_tasks = load_custom_tasks()
+    all_custom_tasks = load_custom_tasks()
+    total_num_tasks = len(all_custom_tasks)
+
+    # Select task subset
+    task_end = cfg.task_end if cfg.task_end >= 0 else total_num_tasks
+    task_start = cfg.task_start
+    custom_tasks = all_custom_tasks[task_start:task_end]
     num_tasks = len(custom_tasks)
 
-    log_message(f"Loaded {num_tasks} task composition L1 tasks", None)
+    log_message(f"Loaded {total_num_tasks} total task composition L1 tasks", None)
+    log_message(f"Running task subset [{task_start}:{task_end}] ({num_tasks} tasks)", None)
     for i, ct in enumerate(custom_tasks):
-        log_message(f"  [{i}] {ct['task_description']} ({ct['task'].bddl_file})", None)
+        log_message(f"  [{task_start + i}] {ct['task_description']} ({ct['task'].bddl_file})", None)
 
     # Setup logging
     log_file, local_log_filepath, run_id = setup_logging(cfg)
@@ -671,7 +681,7 @@ def eval_task_comp(cfg: GenerateConfig) -> float:
     log_message(f"Model base: {cfg.model_base}", log_file)
     log_message(f"Seed: {cfg.seed}", log_file)
     log_message(f"Num trials per task: {cfg.num_trials_per_task}", log_file)
-    log_message(f"Num tasks: {num_tasks}", log_file)
+    log_message(f"Num tasks: {num_tasks} (subset [{task_start}:{task_end}] of {total_num_tasks})", log_file)
     log_message("=" * 80, log_file)
 
     # Run evaluation
@@ -704,17 +714,6 @@ def eval_task_comp(cfg: GenerateConfig) -> float:
     log_message(f"Total successes: {total_successes}", log_file)
     log_message(f"Overall success rate: {final_success_rate:.4f} ({final_success_rate * 100:.1f}%)", log_file)
     log_message("=" * 80, log_file)
-
-    # Save summary
-    if cfg.summary_file:
-        summary_data = {
-            'task_results': task_results,
-            'overall_results': all_results,
-        }
-        os.makedirs(os.path.dirname(cfg.summary_file), exist_ok=True)
-        with open(cfg.summary_file, 'w') as f:
-            json.dump(summary_data, f, indent=2)
-        print(f"Summary saved to: {cfg.summary_file}")
 
     if cfg.use_wandb:
         import wandb
