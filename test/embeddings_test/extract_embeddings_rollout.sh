@@ -9,7 +9,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=6:59:00
-#SBATCH --array=3
+#SBATCH --array=2
 #SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/tinyvla_extract_emb_%A_%a.out
 #SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/tinyvla_extract_emb_%A_%a.err
 
@@ -27,7 +27,7 @@ MODEL_BASE="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints
 WORK_DIR="/home/A.CARDAMONE7/repo/VLA-Bench/robosuite_test/TinyVLA/test/libero_test"
 LIBERO_PATH="/home/A.CARDAMONE7/repo/VLA-Bench/robosuite_test/LIBERO"
 TINYVLA_ROOT="/home/A.CARDAMONE7/repo/VLA-Bench/robosuite_test/TinyVLA"
-OUTPUT_DIR="/mnt/beegfs/a.cardamone7/outputs/embeddings/tinyvla"
+OUTPUT_DIR="/mnt/beegfs/a.cardamone7/outputs/embeddings/tinyvla/10_rollouts_first_step_only"
 
 # Command levels array (index 0-3)
 COMMAND_LEVELS=("default" "l1" "l2" "l3")

@@ -1,12 +1,10 @@
 import os
 import numpy as np
-import tensorflow_datasets as tfds
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import argparse
 import debugpy
-import matplotlib.patches as patches
 import glob
 import pickle as pkl
 
@@ -15,6 +13,48 @@ TABLE_SIZE = (1.0, 1.0)  # height (y), width (x)
 # debugpy.listen(('0.0.0.0', 5678)) 
 # print("Waiting for debugger to attach...")
 # debugpy.wait_for_client()
+
+
+def infer_command_level_from_path(path):
+    """Infer command variation level from a rollout path."""
+    normalized_path = path.lower()
+    if "command_l1" in normalized_path:
+        return "L1"
+    if "command_l2" in normalized_path:
+        return "L2"
+    if "command_l3" in normalized_path:
+        return "L3"
+    if "ablation" in normalized_path:
+        return "ABLATION"
+    if "task_comp_l1" in normalized_path:
+        return "L1"
+    if "task_comp_l2" in normalized_path:
+        return "L2"
+    return "DEFAULT"
+
+
+def get_rollout_paths(base_path, model_prefix):
+    """Return rollout folders for direct or multi-config layouts."""
+    run_folders_direct = glob.glob(os.path.join(base_path, "run_*"))
+    if run_folders_direct:
+        return [(base_path, model_prefix)]
+
+    normalized_path = base_path.lower()
+    if "task_comp" in normalized_path or "task_composition" in normalized_path:
+        return [
+            (os.path.join(base_path, "default"), f"{model_prefix} (Default)"),
+            (os.path.join(base_path, "command_l1"), f"{model_prefix} (L1)"),
+            (os.path.join(base_path, "command_l2"), f"{model_prefix} (L2)"),
+            (os.path.join(base_path, "command_ablation"), f"{model_prefix} (Ablation)"),
+        ]
+
+    return [
+        (os.path.join(base_path, "default"), f"{model_prefix} (Default)"),
+        (os.path.join(base_path, "command_l1"), f"{model_prefix} (L1)"),
+        (os.path.join(base_path, "command_l2"), f"{model_prefix} (L2)"),
+        (os.path.join(base_path, "command_l3"), f"{model_prefix} (L3)"),
+        (os.path.join(base_path, "command_ablation"), f"{model_prefix} (Ablation)"),
+    ]
 
 def compute_heatmap_data(task_distribution):
     """Compute heatmap data from trajectories (without plotting)."""
@@ -208,12 +248,69 @@ def create_combined_heatmap(heatmaps_data, task_path, model_name, command_level)
     print(f"Saved combined heatmap to {save_path}")
 
 
+def process_rollout_folder(test_path, model_name, dataset_config=None):
+    """Process all rollouts in a given folder."""
+    command_level = infer_command_level_from_path(test_path)
+
+    print(f"\n{'='*80}")
+    print(f"Processing: {test_path}")
+    print(f"Model: {model_name}")
+    print(f"Command level: {command_level}")
+    print(f"{'='*80}\n")
+
+    run_folders = glob.glob(os.path.join(test_path, "run_*"))
+    if not run_folders:
+        print(f"WARNING: No run_* folders found in {test_path}")
+        return
+
+    tasks_trajectories = {}
+
+    for run in run_folders:
+        trajectories_npy = glob.glob(os.path.join(run, "*.npy"))
+        trajectories_npy.sort(key=lambda x: int(os.path.basename(x).split("episode=")[-1].split("--")[0]))
+
+        for trajectory_npy in trajectories_npy:
+            data = np.load(trajectory_npy, allow_pickle=True).item()
+            print(f"Analyzing {trajectory_npy.split('/')[-1]}...")
+
+            task_name = data['task_command']
+            print(f"Task command: {task_name}")
+            if task_name not in tasks_trajectories:
+                tasks_trajectories[task_name] = []
+
+            if 'states' not in data:
+                print(f"  WARNING: 'states' key not found in {os.path.basename(trajectory_npy)}")
+                print("  Skipping this file...")
+                continue
+
+            states = np.array(data['states'])[:, :3]
+
+            if dataset_config is not None:
+                qpos_mean = dataset_config['qpos_mean'][:3]
+                qpos_std = dataset_config['qpos_std'][:3]
+                states = (states * qpos_std) + qpos_mean
+
+            tasks_trajectories[task_name].append(states)
+
+    if tasks_trajectories:
+        heatmaps_data = {}
+        for task_name, episodes in tasks_trajectories.items():
+            print(f"Creating heatmap for task: {task_name} with {len(episodes)} episodes")
+            cropped_map = heat_map(episodes, test_path, task_name, command_level)
+            heatmaps_data[task_name] = cropped_map
+
+        print("\nCreating combined heatmap...")
+        create_combined_heatmap(heatmaps_data, test_path, model_name, command_level)
+    else:
+        print(f"WARNING: No trajectories found in {test_path}")
+
+
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description="Create heatmaps for TinyVLA test trajectories")
     argparser.add_argument('--debug', action='store_true', help="Enable remote debugging")
     argparser.add_argument('--test_path', type=str, 
-                          default="/home/A.CARDAMONE7/outputs/rollouts/libero_goal/task_composition/tinyvla/task_comp_l1",
+                          default="/home/A.CARDAMONE7/outputs/rollouts/libero_goal/syntactic_variation/tinyvla/checkpoint_54000_test/l3",
                           help="Path to rollouts folder")
     argparser.add_argument('--dataset_config', type=str,
                           default="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/tiny_vla_llava_pythia_lora_libero_goal_no_noops_lora_r_64/dataset_stats.pkl",
@@ -226,26 +323,6 @@ if __name__ == "__main__":
         print("Waiting for debugger to attach...")
         debugpy.wait_for_client()
     
-    test_path = args.test_path
-    
-    # Determine command level from path
-    if "task_comp_l1" in test_path or "/l1" in test_path.lower():
-        command_level = "L1"
-    elif "task_comp_l2" in test_path or "/l2" in test_path.lower():
-        command_level = "L2"
-    elif "task_comp_l3" in test_path or "/l3" in test_path.lower():
-        command_level = "L3"
-    else:
-        command_level = "DEFAULT"
-    
-    model_name = "TinyVLA"
-    
-    print(f"\n{'='*80}")
-    print(f"Processing: {test_path}")
-    print(f"Model: {model_name}")
-    print(f"Command level: {command_level}")
-    print(f"{'='*80}\n")
-    
     # Load dataset config
     if os.path.exists(args.dataset_config):
         dataset_config = pkl.load(open(args.dataset_config, "rb"))
@@ -253,47 +330,12 @@ if __name__ == "__main__":
     else:
         dataset_config = None
         print("WARNING: Dataset config not found - assuming states are already denormalized")
-                              
-    run_folders = glob.glob(os.path.join(test_path, "run_*"))
 
-    tasks_trajectories = {}
-
-    for run in run_folders:
-        trajectories_npy = glob.glob(os.path.join(run, "*.npy"))
-        trajectories_npy.sort(key=lambda x: int(os.path.basename(x).split("episode=")[-1].split("--")[0]))
-
-        for trajectory_npy in trajectories_npy:
-            data = np.load(trajectory_npy, allow_pickle=True).item()
-            print(f"Analyzing {trajectory_npy.split('/')[-1]}...")
-    
-            task_name = data['task_command']
-            print(f"Task command: {task_name}")
-            if task_name not in tasks_trajectories:
-                tasks_trajectories[task_name] = []
-                
-            states = np.array(data['states'])[:, :3]
-            
-            # denormalize positions if config available
-            if dataset_config is not None:
-                qpos_mean = dataset_config['qpos_mean'][:3]
-                qpos_std = dataset_config['qpos_std'][:3]
-                states = (states * qpos_std) + qpos_mean
-            
-            tasks_trajectories[task_name].append(states)  # list of [x, y, z]
-            
-    # Create heatmaps for each task
-    if tasks_trajectories:
-        heatmaps_data = {}
-        for task_name, episodes in tasks_trajectories.items():
-            print(f"Creating heatmap for task: {task_name} with {len(episodes)} episodes")
-            cropped_map = heat_map(episodes, test_path, task_name, command_level)
-            heatmaps_data[task_name] = cropped_map
-        
-        # Create combined heatmap
-        print(f"\nCreating combined heatmap...")
-        create_combined_heatmap(heatmaps_data, test_path, model_name, command_level)
-    else:
-        print(f"WARNING: No trajectories found in {test_path}")
+    for path, model_name in get_rollout_paths(args.test_path, "TinyVLA"):
+        if os.path.exists(path):
+            process_rollout_folder(path, model_name, dataset_config)
+        else:
+            print(f"WARNING: Path does not exist: {path}")
     
     print("\n" + "="*80)
     print("HEATMAP GENERATION COMPLETE")

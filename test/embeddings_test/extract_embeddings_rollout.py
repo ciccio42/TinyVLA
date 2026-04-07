@@ -77,12 +77,12 @@ from llava_pythia.model import *
 
 from torchvision import transforms
 from einops import rearrange
-import torch_utils as TorchUtils
+import utils.torch_utils as TorchUtils
 
 from libero.libero import get_libero_path, benchmark
 from libero.libero.envs import OffScreenRenderEnv
 
-from libero_utils import (
+from utils.libero_utils import (
     get_libero_dummy_action,
     get_libero_image,
     get_libero_wrist_image,
@@ -90,7 +90,7 @@ from libero_utils import (
     quat2axisangle,
     extract_command_from_bddl,
 )
-from robot_utils import set_seed_everywhere
+from utils.robot_utils import set_seed_everywhere
 
 # Global logger (will be initialized in main)
 logger = None
@@ -277,17 +277,42 @@ def build_bddl_path(task, level: str) -> str:
 # ============================================================================
 
 class EmbeddingCapture:
-    """Captures hidden_states from the GPT-NeoX backbone via a forward hook."""
+    """Captures hidden_states from the GPT-NeoX backbone via a forward hook.
+
+    Pools only **text** token hidden states, excluding visual patch tokens
+    injected by prepare_inputs_labels_for_multimodal.  This makes the
+    extracted embeddings consistent with the OpenVLA extraction approach.
+    """
 
     def __init__(self):
         self.hidden_states = None
         self._handle = None
+        self._input_ids = None  # stored before each forward to locate image tokens
         logger.debug("EmbeddingCapture initialized")
 
+    def set_input_ids(self, input_ids):
+        """Store the original input_ids (before multimodal fusion) so the hook
+        can determine which positions correspond to image tokens."""
+        self._input_ids = input_ids
+
     def hook_fn(self, module, input, output):
-        """Capture the backbone output (hidden_states)."""
-        hs = output[0]  # (B, seq_len, hidden_dim)
-        self.hidden_states = hs.mean(dim=1).detach().cpu().float().numpy()
+        """Capture the backbone output, mean-pooling only text positions."""
+        hs = output[0]  # (B, seq_len_full, hidden_dim)
+
+        if self._input_ids is not None and (self._input_ids == IMAGE_TOKEN_INDEX).any():
+            # Position of the IMAGE_TOKEN_INDEX placeholder in the original ids
+            img_pos = (self._input_ids[0] == IMAGE_TOKEN_INDEX).nonzero(as_tuple=True)[0][0].item()
+            # The placeholder (1 token) is replaced by n_img visual tokens
+            n_img = hs.shape[1] - (self._input_ids.shape[1] - 1)
+            # Keep only text hidden states (before and after the visual block)
+            text_hidden = torch.cat([
+                hs[:, :img_pos, :],           # text tokens before image
+                hs[:, img_pos + n_img:, :],   # text tokens after image
+            ], dim=1)
+            self.hidden_states = text_hidden.mean(dim=1).detach().cpu().float().numpy()
+        else:
+            # Fallback: no image tokens present, pool everything
+            self.hidden_states = hs.mean(dim=1).detach().cpu().float().numpy()
 
     def register(self, model):
         """Register the hook on the GPT-NeoX backbone."""
@@ -409,12 +434,14 @@ def run_episode_with_embeddings(
                     logger.debug("Running warmup inference (10 iterations)...")
                     for warmup_iter in range(10):
                         batch = policy.process_batch_to_llava(curr_image, robot_state, task_description)
+                        emb_capture.set_input_ids(batch['input_ids'])
                         policy.policy(**batch, eval=True)
                     logger.debug("Warmup complete")
 
                 # Query policy (the forward hook captures hidden_states automatically)
                 if t % query_frequency == 0:
                     batch = policy.process_batch_to_llava(curr_image, robot_state, task_description)
+                    emb_capture.set_input_ids(batch['input_ids'])
                     all_actions = policy.policy(**batch, eval=True)
 
                 # Capture embedding from the hook

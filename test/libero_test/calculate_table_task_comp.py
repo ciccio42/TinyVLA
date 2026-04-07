@@ -1,7 +1,7 @@
 """
 calculate_table_task_comp.py
 
-Genera una tabella Excel con i risultati di Task Composition L1 per TinyVLA.
+Genera una tabella Excel con i risultati di Task Composition L1 o L2 per TinyVLA.
 
 Colonne:
   - # Task
@@ -14,6 +14,7 @@ Colonne:
 
 Uso:
   python calculate_table_task_comp.py --txt_dir <dir> output.xlsx
+  python calculate_table_task_comp.py --level l2 --txt_dir <dir> output.xlsx
   python calculate_table_task_comp.py --manual --seed0 f0.txt --seed1 f1.txt --seed2 f2.txt output.xlsx
 """
 
@@ -31,6 +32,10 @@ from openpyxl.styles import Font, Alignment
 # TASK ORDER & MAPPING
 # =========================
 
+def normalize_task_key(task_name):
+    """Normalizza i nomi task per matching robusto tra log e tabella."""
+    return " ".join(task_name.strip().lower().split())
+
 def get_task_comp_l1_order():
     """Ordine fisso dei 5 task composition L1."""
     return [
@@ -42,21 +47,45 @@ def get_task_comp_l1_order():
     ]
 
 
-def get_reference_mapping():
+def get_task_comp_l2_order():
+    """Ordine fisso dei 5 task composition L2."""
+    return [
+        "Open the middle layer of the drawer and put the bowl inside",
+        "Put the bowl on the stove and turn on the stove",
+        "Put the cream cheese on the bowl and put the bowl on the plate",
+        "Push the plate to the front of the stove and put the bowl on the plate",
+        "Put the cream cheese on the bowl and put the bowl on the top of the cabinet",
+    ]
+
+
+def get_reference_mapping(level="l1"):
     """
-    Mapping: task composition L1 → task di riferimento dal training.
+    Mapping: task composition → task di riferimento dal training.
     Chiavi lowercase per matching case-insensitive.
     """
+    if level == "l2":
+        return {
+            normalize_task_key("Open the middle layer of the drawer and put the bowl inside"):
+                "Open the middle drawer of the cabinet  /  Open the top drawer and put the bowl inside",
+            normalize_task_key("Put the bowl on the stove and turn on the stove"):
+                "Put the bowl on the stove  /  Turn on the stove",
+            normalize_task_key("Put the cream cheese on the bowl and put the bowl on the plate"):
+                "Put the cream cheese in the bowl  /  Put the bowl on the plate",
+            normalize_task_key("Push the plate to the front of the stove and put the bowl on the plate"):
+                "Push the plate to the front of the stove  /  Put the bowl on the plate",
+            normalize_task_key("Put the cream cheese on the bowl and put the bowl on the top of the cabinet"):
+                "Put the cream cheese in the bowl  /  Put the bowl on the top of the cabinet",
+        }
     return {
-        "put the plate on the top of the cabinet":
+        normalize_task_key("Put the plate on the top of the cabinet"):
             "Put the bowl on the top of the cabinet",
-        "put the plate on the stove":
+        normalize_task_key("Put the plate on the stove"):
             "Put the bowl on the stove",
-        "put the cream cheese on the top of the cabinet":
+        normalize_task_key("Put the cream cheese on the top of the cabinet"):
             "Put the wine bottle on the top of the cabinet",
-        "put the cream cheese on the plate":
+        normalize_task_key("Put the cream cheese on the plate"):
             "Put the cream cheese on the bowl",
-        "open the top layer of the drawer and put the cream cheese inside":
+        normalize_task_key("Open the top layer of the drawer and put the cream cheese inside"):
             "Open the top layer of the drawer and put the bowl inside",
     }
 
@@ -67,7 +96,7 @@ def get_reference_mapping():
 
 def parse_txt_file(filepath):
     """
-    Parsa un file di log task_comp_l1 (TinyVLA).
+    Parsa un file di log task_comp_l1/task_comp_l2 (TinyVLA).
     Cerca blocchi TASK X/N con "Command:" e "Task success rate:".
 
     Returns:
@@ -92,7 +121,7 @@ def parse_txt_file(filepath):
         # "Command: Put the plate on the stove"
         if line_s.startswith("Command:"):
             current_task = line_s.split("Command:", 1)[-1].strip()
-            current_task_lower = current_task.lower()
+            current_task_lower = normalize_task_key(current_task)
 
         # "# episodes completed: 50"  (formato OpenVLA)
         if current_task and "# episodes completed:" in line_s:
@@ -131,7 +160,7 @@ def merge_txt_files(txt_files_list):
     for fp in txt_files_list:
         rates, eps, order = parse_txt_file(fp)
         for task in order:
-            tk = task.lower()
+            tk = normalize_task_key(task)
             if tk not in task_rates_list:
                 all_tasks.append(task)
             task_rates_list[tk].append(rates[tk])
@@ -145,8 +174,8 @@ def merge_txt_files(txt_files_list):
 # EXCEL GENERATION
 # =========================
 
-def write_excel(output_xlsx, txt_files_by_seed):
-    """Genera l'Excel con i risultati task_comp_l1."""
+def write_excel(output_xlsx, txt_files_by_seed, level="l1"):
+    """Genera l'Excel con i risultati task_comp (L1 o L2)."""
 
     # Parse per ogni seed
     all_rates = []
@@ -161,12 +190,12 @@ def write_excel(output_xlsx, txt_files_by_seed):
         all_episodes.append(eps)
         print(f"    -> {len(rates)} task trovati")
 
-    ref_mapping = get_reference_mapping()
-    fixed_order = get_task_comp_l1_order()
+    ref_mapping = get_reference_mapping(level)
+    fixed_order = get_task_comp_l2_order() if level == "l2" else get_task_comp_l1_order()
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Task Comp L1"
+    ws.title = f"Task Comp {level.upper()}"
 
     # Header
     headers = [
@@ -189,7 +218,7 @@ def write_excel(output_xlsx, txt_files_by_seed):
     all_seed_completions = [[], [], []]
 
     for task_idx, task_cmd in enumerate(fixed_order, start=1):
-        tk = task_cmd.lower()
+        tk = normalize_task_key(task_cmd)
         ref_task = ref_mapping.get(tk, "")
 
         seed_rates = []
@@ -197,14 +226,15 @@ def write_excel(output_xlsx, txt_files_by_seed):
 
         for seed_idx in range(3):
             rate = all_rates[seed_idx].get(tk, float("nan"))
-            succ = int(round(rate / 100 * 50)) if rate == rate else 0
+            episodes = all_episodes[seed_idx].get(tk, 50)
+            succ = int(round(rate / 100 * episodes)) if rate == rate else 0
 
             seed_rates.append(rate)
-            seed_completions.append(f"{succ}/50")
+            seed_completions.append(f"{succ}/{episodes}")
 
             if rate == rate:
                 all_seed_rates[seed_idx].append(rate)
-                all_seed_completions[seed_idx].append((succ, 50))
+                all_seed_completions[seed_idx].append((succ, episodes))
 
         # Mean ± Std
         valid = [r for r in seed_rates if r == r]
@@ -212,9 +242,11 @@ def write_excel(output_xlsx, txt_files_by_seed):
             mean_r = sum(valid) / len(valid)
             std_r = math.sqrt(sum((r - mean_r) ** 2 for r in valid) / (len(valid) - 1)) if len(valid) > 1 else 0.0
             mean_display = f"{mean_r:.1f}% ± {std_r:.1f}%"
-            avg_succ = int(round(mean_r / 100 * 50))
+            avg_episodes = int(round(sum(all_episodes[seed_idx].get(tk, 50) for seed_idx in range(3)) / 3))
+            avg_succ = int(round(mean_r / 100 * avg_episodes))
         else:
             mean_display = "N/A"
+            avg_episodes = 50
             avg_succ = 0
 
         ws.append([
@@ -228,7 +260,7 @@ def write_excel(output_xlsx, txt_files_by_seed):
             f"{seed_rates[2]:.1f}%" if seed_rates[2] == seed_rates[2] else "N/A",
             seed_completions[2],
             mean_display,
-            f"{avg_succ}/50",
+            f"{avg_succ}/{avg_episodes}",
         ])
 
     # Riga finale: Mean ± Std globale
@@ -278,8 +310,10 @@ def write_excel(output_xlsx, txt_files_by_seed):
 # AUTO-DETECT
 # =========================
 
-def find_txt_files_by_seed(base_dir, pattern_prefix="EVAL-task_comp_l1"):
+def find_txt_files_by_seed(base_dir, pattern_prefix=None, level="l1"):
     """Trova i file .txt per ogni seed nella directory."""
+    if pattern_prefix is None:
+        pattern_prefix = f"EVAL-task_comp_{level}"
     txt_files_by_seed = {0: [], 1: [], 2: []}
 
     print(f"\n[INFO] Cercando in: {base_dir}")
@@ -308,15 +342,17 @@ def find_txt_files_by_seed(base_dir, pattern_prefix="EVAL-task_comp_l1"):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Genera tabella Excel Task Composition L1 (TinyVLA) da file log .txt"
+        description="Genera tabella Excel Task Composition L1/L2 (TinyVLA) da file log .txt"
     )
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--txt_dir", help="Directory con i file .txt (auto-detect)")
     group.add_argument("--manual", action="store_true", help="Specifica file manualmente")
 
-    parser.add_argument("--pattern", default="EVAL-task_comp_l1",
-                        help="Prefix per auto-detect (default: EVAL-task_comp_l1)")
+    parser.add_argument("--level", default="l1", choices=["l1", "l2"],
+                        help="Livello di composizione: l1 (default) o l2")
+    parser.add_argument("--pattern", default=None,
+                        help="Prefix per auto-detect (default: EVAL-task_comp_<level>)")
     parser.add_argument("--seed0", nargs="+", help="File per seed 0 (modo manuale)")
     parser.add_argument("--seed1", nargs="+", help="File per seed 1 (modo manuale)")
     parser.add_argument("--seed2", nargs="+", help="File per seed 2 (modo manuale)")
@@ -325,7 +361,7 @@ def main():
     args = parser.parse_args()
 
     print("\n" + "=" * 60)
-    print("  TASK COMPOSITION L1 (TinyVLA) - EXCEL TABLE GENERATOR")
+    print(f"  TASK COMPOSITION {args.level.upper()} (TinyVLA) - EXCEL TABLE GENERATOR")
     print("=" * 60)
 
     if args.manual:
@@ -334,12 +370,12 @@ def main():
             exit(1)
         txt_files_by_seed = {0: args.seed0, 1: args.seed1, 2: args.seed2}
     else:
-        txt_files_by_seed = find_txt_files_by_seed(args.txt_dir, args.pattern)
+        txt_files_by_seed = find_txt_files_by_seed(args.txt_dir, args.pattern, args.level)
         if txt_files_by_seed is None:
             print("[ERROR] File non trovati per tutti i seed!")
             exit(1)
 
-    write_excel(args.output_xlsx, txt_files_by_seed)
+    write_excel(args.output_xlsx, txt_files_by_seed, level=args.level)
 
     print("=" * 60)
     print("  COMPLETATO!")

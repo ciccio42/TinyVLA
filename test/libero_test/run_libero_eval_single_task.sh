@@ -1,15 +1,16 @@
 #!/bin/bash
 
 #SBATCH --account=did_robot_learning_359
-#SBATCH --job-name=l2v_tinyvla_libero_eval
+#SBATCH --job-name=task9_l1_tinyvla_libero_eval
 #SBATCH --partition=gpuq
+#SBATCH --exclude=gnode13
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --array=0-11        # 0-2=tasks0-2, 3-5=tasks3-5, 6-8=tasks6-8, 9-11=task9
-#SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/L2_Variations_Eval_tinyvla_54000_libero_goal_l2_seed_%a_%j.out
-#SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/L2_Variations_Eval_tinyvla_54000_libero_goal_l2_seed_%a_%j.err
+#SBATCH --array=8,18,28      # 30 jobs: 3 seeds × 10 tasks; SEED=ARRAY_ID/10, TASK_ID=ARRAY_ID%10
+#SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/L1_Variations_eval_tinyvla_libero_goal_l1_task9_seed_%a_%j.out
+#SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/L1_Variations_eval_tinyvla_libero_goal_l1_task9_seed_%a_%j.err
 
 
 # ==========================================
@@ -17,22 +18,19 @@
 # ==========================================
 
 
-# Get seed from SLURM array task ID
+# Get seed and task from SLURM array task ID
+# ARRAY_ID = SEED * 10 + TASK_ID  →  seed ∈ {0,1,2}, task ∈ {0,...,9}
+# To run specific tasks/seeds: sbatch --array=<IDs> run_libero_eval.sh
+#   e.g. all 3 seeds for tasks 2 and 4: --array=2,4,12,14,22,24
+#   e.g. all tasks for seed 0 only:     --array=0-9
 ARRAY_ID=$SLURM_ARRAY_TASK_ID
-SEED=$((ARRAY_ID / 4))           # 0-3→seed0, 4-7→seed1, 8-11→seed2
-TASK_GROUP=$((ARRAY_ID % 4))     # 0=tasks0-2, 1=tasks3-5, 2=tasks6-8, 3=task9
+SEED=$((ARRAY_ID / 10))          # 0-9→seed0, 10-19→seed1, 20-29→seed2
+TASK_ID=$((ARRAY_ID % 10))       # 0-9 → individual task index
 
+TASK_RANGE="${TASK_ID}-${TASK_ID}"
+TASK_GROUP_NAME="task${TASK_ID}"
 
-# Mappa task group → range
-case $TASK_GROUP in
-    0) TASK_RANGE="0-2";   TASK_GROUP_NAME="tasks0-2" ;;
-    1) TASK_RANGE="3-5";   TASK_GROUP_NAME="tasks3-5" ;;
-    2) TASK_RANGE="6-8";   TASK_GROUP_NAME="tasks6-8" ;;
-    3) TASK_RANGE="9-9";   TASK_GROUP_NAME="task9"   ;;
-esac
-
-
-echo "ARRAY_ID=$ARRAY_ID → SEED=$SEED, TASKS=$TASK_RANGE"
+echo "ARRAY_ID=$ARRAY_ID → SEED=$SEED, TASK=$TASK_ID"
 
 
 # ==========================================
@@ -42,7 +40,7 @@ echo "ARRAY_ID=$ARRAY_ID → SEED=$SEED, TASKS=$TASK_RANGE"
 
 # Command variation settings (MODIFY THESE)
 CHANGE_COMMAND=true   # Set to 'true' to use command variations, 'false' for default
-COMMAND_LEVEL="l2"    # Options: 'default', 'l1', 'l2', 'l3', 'all', 'all_no_default'
+COMMAND_LEVEL="l1"    # Options: 'default', 'l1', 'l2', 'l3', 'all', 'all_no_default'
 
 
 # Task suite
@@ -72,9 +70,9 @@ ENV_IMG_RES=256
 
 
 if [ "$CHANGE_COMMAND" == "true" ]; then
-    ID_NOTE_SUFFIX="L2_Variations_Eval_tinyvla_${TASK_SUITE}_54000_${COMMAND_LEVEL}_seed${SEED}_${TASK_GROUP_NAME}"
+    ID_NOTE_SUFFIX="L1_Variations_tinyvla_${TASK_SUITE}_54000_${COMMAND_LEVEL}_task${TASK_ID}_seed${SEED}_${TASK_GROUP_NAME}"
 else
-    ID_NOTE_SUFFIX="L2_Variations_Eval_tinyvla_${TASK_SUITE}_default_54000_seed${SEED}_${TASK_GROUP_NAME}"
+    ID_NOTE_SUFFIX="tinyvla_${TASK_SUITE}_default_54000_seed${SEED}_task${TASK_ID}_${TASK_GROUP_NAME}"
 fi
 
 

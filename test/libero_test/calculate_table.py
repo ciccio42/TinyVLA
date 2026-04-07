@@ -54,9 +54,9 @@ def get_variation_mapping():
     orig_3 = "Put the wine bottle on the top of the drawer"
     raw_mapping["put the wine bottle on top of the drawer"] = orig_3  # DEFAULT
     raw_mapping["put the wine bottle on the top of the cabinet"] = orig_3  # VARIANTE
-    raw_mapping["Place the wine bottle on the top of the drawer"] = orig_3  # L1
-    raw_mapping["Top of the drawer needs to have the wine bottle on it"] = orig_3  # L2
-    raw_mapping["Put the object behind the bowl on the top of the drawer"] = orig_3  # L3
+    raw_mapping["Place the wine bottle on the top of the cabinet"] = orig_3  # L1
+    raw_mapping["Top of the cabinet needs to have the wine bottle on it"] = orig_3  # L2
+    raw_mapping["Put the object behind the bowl on the top of the cabinet"] = orig_3  # L3
 
     
     # Task 4: Open the top layer of the drawer and put the bowl inside
@@ -65,16 +65,16 @@ def get_variation_mapping():
     raw_mapping["Open the top layer of the drawer and put the bowl inside"] = orig_4  # VARIANTE
     raw_mapping["Pull the top layer of the drawer and place the bowl inside"] = orig_4  # L1
     raw_mapping["Pull the top layer of the drawer and put the bowl inside"] = orig_4  # L1 alt
-    raw_mapping["Store the bowl inside the top layer of the drawer"] = orig_4  # L2
+    raw_mapping["The top layer of the drawer needs to be opened and the bowl needs to be put inside"] = orig_4  # L2
     raw_mapping["Open the top layer of the drawer and put the object between the plate and the cream cheese inside"] = orig_4  # L3
     
     # Task 5: Put the bowl on the top of the drawer
     orig_5 = "Put the bowl on the top of the drawer"
     raw_mapping["Put the bowl on top of the drawer"] = orig_5  # DEFAULT
     raw_mapping["put the bowl on the top of the cabinet"] = orig_5  # VARIANTE
-    raw_mapping["Place the bowl on the top of the drawer"] = orig_5  # L1
-    raw_mapping["The top of the drawer needs to have the bowl on it"] = orig_5  # L2
-    raw_mapping["Put the object between the wine bottle and the cream cheese on the top of the drawer"] = orig_5  # L3
+    raw_mapping["Place the bowl on the top of the cabinet"] = orig_5  # L1
+    raw_mapping["The top of the cabinet needs to have the bowl on it"] = orig_5  # L2
+    raw_mapping["Put the object between the wine bottle and the cream cheese on the top of the cabinet"] = orig_5  # L3
     
     # Task 6: Push the plate to the front of the stove
     orig_6 = "Push the plate to the front of the stove"
@@ -89,7 +89,7 @@ def get_variation_mapping():
     raw_mapping["put the cream cheese on the bowl"] = orig_7  # VARIANTE
     raw_mapping["Place the cream cheese on the bowl"] = orig_7  # L1
     raw_mapping["Place the cream cheese in the bowl"] = orig_7  # L1 alt
-    raw_mapping["The bowl needs to be filled with the cream cheese"] = orig_7  # L2
+    raw_mapping["The cream cheese needs to be put on the bowl"] = orig_7  # L2
     raw_mapping["Put the object in front of the stove on the bowl"] = orig_7  # L3
     
     # Task 8: Turn on the stove

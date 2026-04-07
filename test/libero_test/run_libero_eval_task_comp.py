@@ -35,7 +35,7 @@ import numpy as np
 import time
 from llava_pythia.model import *
 from einops import rearrange
-import torch_utils as TorchUtils
+import utils.torch_utils as TorchUtils
 import pickle
 
 import draccus
@@ -50,14 +50,14 @@ from libero.libero import get_libero_path
 from libero.libero.benchmark import Task
 from libero.libero.envs import OffScreenRenderEnv
 
-from libero_utils import (
+from utils.libero_utils import (
     get_libero_dummy_action,
     get_libero_image,
     get_libero_wrist_image,
     quat2axisangle,
     extract_command_from_bddl,
 )
-from robot_utils import DATE_TIME, set_seed_everywhere
+from utils.robot_utils import DATE_TIME, set_seed_everywhere
 
 
 # ============================================================================
@@ -97,7 +97,45 @@ TASK_COMP_L1_TASKS = [
     },
 ]
 
-TASK_MAX_STEPS = 300  # same as libero_goal
+
+# ============================================================================
+# Task Composition L2 - Custom Task Definitions
+# ============================================================================
+
+TASK_COMP_L2_TASKS = [
+    {
+        # L2: open MIDDLE drawer + put bowl inside (chain: open + pick-place)
+        "bddl_file": "open_the_middle_drawer_of_the_cabinet_task_comp_l2.bddl",
+        "init_states_from": "open_the_middle_drawer_of_the_cabinet",
+    },
+    {
+        # L2: put bowl on stove + turn on stove (chain: pick-place + manipulation)
+        "bddl_file": "put_the_bowl_on_the_stove_task_comp_l2.bddl",
+        "init_states_from": "put_the_bowl_on_the_stove",
+    },
+    {
+        # L2: put cream cheese in bowl + put bowl on plate (chain: 2 pick-place)
+        "bddl_file": "put_the_cream_cheese_in_the_bowl_task_comp_l2.bddl",
+        "init_states_from": "put_the_cream_cheese_in_the_bowl",
+    },
+    {
+        # L2: push plate to stove front + put bowl on plate (chain: push + pick-place)
+        "bddl_file": "push_the_plate_to_the_front_of_the_stove_task_comp_l2.bddl",
+        "init_states_from": "push_the_plate_to_the_front_of_the_stove",
+    },
+    {
+        # L2: put cream cheese in bowl + put bowl on top of cabinet (chain: 2 pick-place)
+        "bddl_file": "put_the_bowl_on_top_of_the_cabinet_task_comp_l2.bddl",
+        "init_states_from": "put_the_cream_cheese_in_the_bowl",
+    },
+]
+
+TASK_COMP_REGISTRY = {
+    "l1": TASK_COMP_L1_TASKS,
+    "l2": TASK_COMP_L2_TASKS,
+}
+
+TASK_MAX_STEPS = 500  # same as libero_goal
 
 
 # Set up logging
@@ -291,6 +329,7 @@ class GenerateConfig:
     run_number: int = 0
     debug: bool = False
     local_rank: int = 0
+    comp_level: str = "l2"
 
     # Task subset (for splitting across nodes)
     task_start: int = 0
@@ -302,13 +341,13 @@ class GenerateConfig:
 # Custom Task Loading
 # ============================================================================
 
-def load_custom_tasks():
-    """Build Task NamedTuples and load init_states for each task_comp_l1 task."""
+def load_custom_tasks(comp_level: str = "l2"):
+    """Build Task NamedTuples and load init_states for each task_comp task."""
     bddl_dir = os.path.join(get_libero_path("bddl_files"), "libero_goal")
     init_dir = os.path.join(get_libero_path("init_states"), "libero_goal")
 
     custom_tasks = []
-    for task_def in TASK_COMP_L1_TASKS:
+    for task_def in TASK_COMP_REGISTRY[comp_level]:
         bddl_filename = task_def["bddl_file"]
         init_from = task_def["init_states_from"]
 
@@ -359,7 +398,7 @@ def create_env_from_bddl(bddl_path, resolution=256):
 # ============================================================================
 
 def setup_logging(cfg: GenerateConfig):
-    run_id = f"EVAL-task_comp_l1-{cfg.model_family}-{DATE_TIME}"
+    run_id = f"EVAL-task_comp_{cfg.comp_level}-{cfg.model_family}-{DATE_TIME}"
     if cfg.run_id_note is not None:
         run_id += f"--{cfg.run_id_note}"
     if cfg.checkpoint_size > 0:
@@ -559,7 +598,7 @@ def run_custom_task(
             total_successes += 1
 
         # Save rollout video - use custom directory for task_comp_l1
-        rollout_dir = f"/mnt/beegfs/a.cardamone7/outputs/rollouts/libero_goal/task_composition/tinyvla/task_comp_l1/run_{cfg.run_number}"
+        rollout_dir = f"/mnt/beegfs/a.cardamone7/outputs/rollouts/libero_goal/task_composition/tinyvla/task_comp_{cfg.comp_level}/run_{cfg.run_number}"
         os.makedirs(rollout_dir, exist_ok=True)
         processed_desc = task_description.lower().replace(" ", "_").replace("\n", "_").replace(".", "_")[:50]
         mp4_path = f"{rollout_dir}/{DATE_TIME}--episode={total_episodes}--success={success}--task={processed_desc}.mp4"
@@ -658,7 +697,7 @@ def eval_task_comp(cfg: GenerateConfig) -> float:
     policy = llava_pythia_act_policy(policy_config)
 
     # Load custom tasks
-    all_custom_tasks = load_custom_tasks()
+    all_custom_tasks = load_custom_tasks(cfg.comp_level)
     total_num_tasks = len(all_custom_tasks)
 
     # Select task subset
@@ -667,7 +706,7 @@ def eval_task_comp(cfg: GenerateConfig) -> float:
     custom_tasks = all_custom_tasks[task_start:task_end]
     num_tasks = len(custom_tasks)
 
-    log_message(f"Loaded {total_num_tasks} total task composition L1 tasks", None)
+    log_message(f"Loaded {total_num_tasks} total task composition {cfg.comp_level.upper()} tasks", None)
     log_message(f"Running task subset [{task_start}:{task_end}] ({num_tasks} tasks)", None)
     for i, ct in enumerate(custom_tasks):
         log_message(f"  [{task_start + i}] {ct['task_description']} ({ct['task'].bddl_file})", None)
@@ -676,7 +715,7 @@ def eval_task_comp(cfg: GenerateConfig) -> float:
     log_file, local_log_filepath, run_id = setup_logging(cfg)
 
     log_message("=" * 80, log_file)
-    log_message("TASK COMPOSITION L1 EVALUATION (TinyVLA)", log_file)
+    log_message(f"TASK COMPOSITION {cfg.comp_level.upper()} EVALUATION (TinyVLA)", log_file)
     log_message(f"Model: {cfg.model_path}", log_file)
     log_message(f"Model base: {cfg.model_base}", log_file)
     log_message(f"Seed: {cfg.seed}", log_file)
@@ -688,7 +727,7 @@ def eval_task_comp(cfg: GenerateConfig) -> float:
     total_episodes, total_successes = 0, 0
     task_results = {}
 
-    for task_idx in tqdm.tqdm(range(num_tasks), desc="Task Comp L1"):
+    for task_idx in tqdm.tqdm(range(num_tasks), desc=f"Task Comp {cfg.comp_level.upper()}"):
         total_episodes, total_successes, task_name, task_sr, task_eps = run_custom_task(
             cfg, custom_tasks[task_idx], task_idx, num_tasks,
             policy, policy_config, log_file,

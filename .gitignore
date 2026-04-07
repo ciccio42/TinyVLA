@@ -182,3 +182,6 @@ llava-pythia/llava_pythia/model/multimodal_encoder/__pycache__/clip_encoder.cpyt
 llava-pythia/llava_pythia/model/multimodal_encoder/__pycache__/siglip_encoder.cpython-310.pyc
 llava-pythia/llava_pythia/model/multimodal_projector/__pycache__/builder.cpython-310.pyc
 scripts/.nfs0000000145d64cb800008c89
+test/libero_test/utils/tinyvla_l1_evaluation.xlsx
+test/libero_test/utils/tinyvla_l2_evaluation.xlsx
+test/vqa_test/vqa_prompts_test1.json

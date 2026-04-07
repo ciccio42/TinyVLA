@@ -1,22 +1,27 @@
 #!/bin/bash
 
 #SBATCH --account=did_robot_learning_359
-#SBATCH --job-name=tinyvla_54000_task_comp_l1
+#SBATCH --job-name=L2_TinyVLA_54000_task_comp_eval
 #SBATCH --partition=gpuq
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --array=0         # 3 seeds x 2 parts = 6 jobs
-#SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_54000_task_comp_l1_arr%a_%j.out
-#SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_54000_task_comp_l1_arr%a_%j.err
+#SBATCH --array=1,3,5       # 3 seeds x 2 parts = 6 jobs
+#SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_54000_task_comp_arr%a_%j.out
+#SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/eval_tinyvla_54000_task_comp_arr%a_%j.err
 
 # ==========================================
-# TinyVLA - Task Composition L1 Evaluation
+# TinyVLA - Task Composition Evaluation
 # ==========================================
-# Tests task-level generalization: the model must apply known
-# primitives (pick-place, open drawer, etc.) to new object/target
-# combinations never seen during training.
+# Supports both L1 and L2 composition levels.
+#
+# Usage:
+#   COMP_LEVEL=l1 sbatch run_libero_eval_task_comp.sh
+#   COMP_LEVEL=l2 sbatch run_libero_eval_task_comp.sh
+#
+# L1: Task-level generalization (new object-target pairs, 5 tasks)
+# L2: Multi-step compositional generalization (chaining primitives, 5 tasks)
 #
 # Split: 5 tasks across 2 nodes per seed
 #   Part 0 → tasks 0,1,2  (3 tasks)
@@ -27,7 +32,9 @@
 #   4 → seed 2, part 0   |   5 → seed 2, part 1
 # ==========================================
 
-# Decode seed and part from array index
+# Default to l1 if not set
+COMP_LEVEL=${COMP_LEVEL:-l2}
+
 SEED=$((SLURM_ARRAY_TASK_ID / 2))
 PART=$((SLURM_ARRAY_TASK_ID % 2))
 
@@ -39,7 +46,7 @@ else
     TASK_END=5
 fi
 
-ID_NOTE="tinyvla_54000_task_comp_l1_seed_${SEED}_part${PART}"
+ID_NOTE="tinyvla_54000_task_comp_${COMP_LEVEL}_seed_${SEED}_part${PART}"
 
 # Model configuration
 MODEL_PATH="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/tinyvla/post_processed_tiny_vla_llava_pythia_lora_libero_goal_no_noops_lora_r_64_processed/checkpoint-54000"
@@ -52,10 +59,11 @@ TINYVLA_ROOT="/home/A.CARDAMONE7/repo/VLA-Bench/robosuite_test/TinyVLA"
 OUTPUT_DIR="/mnt/beegfs/a.cardamone7/outputs"
 
 echo "=========================================="
-echo "TinyVLA Task Composition L1 Evaluation"
+echo "TinyVLA Task Composition ${COMP_LEVEL^^} Evaluation"
 echo "=========================================="
 echo "Job ID: $SLURM_JOB_ID"
 echo "Array Task ID: $SLURM_ARRAY_TASK_ID"
+echo "Comp Level: $COMP_LEVEL"
 echo "Seed: $SEED"
 echo "Part: $PART (tasks $TASK_START to $((TASK_END - 1)))"
 echo "Model: $MODEL_PATH"
@@ -107,6 +115,7 @@ srun python run_libero_eval_task_comp.py \
     --run_id_note ${ID_NOTE} \
     --task_start ${TASK_START} \
     --task_end ${TASK_END} \
+    --comp_level ${COMP_LEVEL} \
     --local_log_dir ${OUTPUT_DIR}/logs \
     --use_wandb False \
     --debug False
@@ -116,7 +125,7 @@ EXIT_CODE=$?
 echo ""
 echo "=========================================="
 if [ $EXIT_CODE -eq 0 ]; then
-    echo "Task Composition L1 evaluation completed successfully!"
+    echo "Task Composition L2 evaluation completed successfully!"
 else
     echo "Evaluation failed with exit code: $EXIT_CODE"
 fi

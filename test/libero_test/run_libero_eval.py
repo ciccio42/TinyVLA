@@ -20,10 +20,10 @@ import numpy as np
 import time
 from llava_pythia.model import *
 from einops import rearrange
-import torch_utils as TorchUtils
+import utils.torch_utils as TorchUtils
 import matplotlib.pyplot as plt
 import argparse
-from robot_utils import set_seed_everywhere
+from utils.robot_utils import set_seed_everywhere
 from enum import Enum
 from dataclasses import dataclass
 import tqdm
@@ -32,7 +32,7 @@ from dataclasses import dataclass
 import draccus
 import transformers
 from libero.libero import benchmark
-from libero_utils import (
+from utils.libero_utils import (
     get_libero_dummy_action,
     get_libero_env,
     get_libero_image,
@@ -41,7 +41,7 @@ from libero_utils import (
     save_rollout_video,
 )
 from PIL import Image
-from robot_utils import DATE_TIME
+from utils.robot_utils import DATE_TIME
 import wandb
 import json
 from collections import deque
@@ -280,6 +280,7 @@ class GenerateConfig:
     ##################################################################################################################
     change_command: bool = False                     # Whether to change the command during evaluation
     command_level: Optional[str] = None              # Command level: 'l1', 'l2', 'l3', 'all', 'all_no_default', 'default', or None
+    selected_version: Optional[int] = None           # Specific version to use (e.g., 1,2,3,4). If None, rotate through all versions
 
 
 def get_obs(obs, stats):
@@ -297,6 +298,23 @@ def get_obs(obs, stats):
     states = (states - stats["qpos_mean"]) / stats["qpos_std"]
     return images, states
 
+def parse_command_levels(cfg: GenerateConfig):
+    if not cfg.change_command or cfg.command_level is None:
+        return [None]
+    
+    presets = {
+        "all":            [None, "l1", "l2", "l3"],
+        "all_no_default": ["l1", "l2", "l3"],
+        "default":        [None],
+    }
+    if cfg.command_level in presets:
+        return presets[cfg.command_level]
+    
+    # "l1,l2" → ["l1", "l2"]
+    if "," in cfg.command_level:
+        return [l.strip() for l in cfg.command_level.split(",")]
+    
+    return [cfg.command_level]
 
 def setup_logging(cfg: GenerateConfig):
     """Set up logging to file and optionally to wandb."""
@@ -307,9 +325,6 @@ def setup_logging(cfg: GenerateConfig):
     # Add command level to run_id if specified
     if cfg.change_command and cfg.command_level:
         run_id += f"--{cfg.command_level}"
-
-    if cfg.checkpoint_size > 0:
-        run_id += f"--ckpt{cfg.checkpoint_size}"
 
     os.makedirs(cfg.local_log_dir, exist_ok=True)
     local_log_filepath = os.path.join(cfg.local_log_dir, run_id + ".txt")
@@ -530,101 +545,174 @@ def run_task(
     task = task_suite.get_task(task_id)
     initial_states, all_initial_states = load_initial_states(cfg, task_suite, task_id, log_file)
 
+    # Find all available versions if using command variation
+    available_versions = []
+    if cfg.change_command and cfg.command_level is not None:
+        base_name = os.path.splitext(os.path.basename(task.bddl_file))[0]
+        
+        try:
+            from libero.libero import get_libero_path
+            bddl_folder = os.path.join(get_libero_path("bddl_files"), task.problem_folder)
+        except:
+            bddl_folder = os.path.dirname(task.bddl_file)
+        
+        pattern = f"{base_name}_syn_{cfg.command_level}_v"
+        
+        try:
+            for filename in os.listdir(bddl_folder):
+                if pattern.lower() in filename.lower() and filename.endswith('.bddl'):
+                    import re
+                    match = re.search(r'_v(\d+)', filename, re.IGNORECASE)
+                    if match:
+                        version_num = int(match.group(1))
+                        available_versions.append((version_num, filename))
+        except Exception as e:
+            log_message(f"Warning: Could not list version files: {e}", log_file)
+        
+        available_versions.sort()  # Sort by version number
 
-    # Initialize environment (returns 3 values with L1/L2/L3 support)
-    env, task_description, original_description = get_libero_env(
-        task,
-        cfg.model_family,
-        change_command=cfg.change_command,
-        command_level=cfg.command_level,
-        resolution=cfg.env_img_res
-    )
+    # Determine which versions to test
+    if cfg.selected_version is not None:
+        # User specified a single version
+        versions_to_test = [cfg.selected_version]
+    elif available_versions:
+        # Test all versions sequentially
+        versions_to_test = [v[0] for v in available_versions]
+    else:
+        # Use default (no version)
+        versions_to_test = [None]
 
-
-    # Log task info
     log_message("=" * 80, log_file)
     log_message(f"TASK {task_id + 1}/{task_suite.n_tasks}", log_file)
-    log_message(f"Original Command: {original_description}", log_file)
-   
-    if cfg.change_command and cfg.command_level:
-        log_message(f"Command Level: {cfg.command_level.upper()}", log_file)
-        log_message(f"Variation Command: {task_description}", log_file)
-        if task_description == original_description:
-            log_message("WARNING: Variation same as original - check BDDL file", log_file)
-    else:
-        log_message(f"Command Level: DEFAULT", log_file)
-   
+    log_message(f"Versions to test: {versions_to_test}", log_file)
     log_message("=" * 80, log_file)
 
+    task_results_per_version = {}
 
-    # ✅ SEMPRE 50 EPISODI NUOVI - NO SKIP
-    task_episodes, task_successes = 0, 0
-    for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
-        log_message(f"\nTask: {task_description}", log_file)
-       
-        # Handle initial state
-        if cfg.initial_states_path == "DEFAULT":
-            initial_state = initial_states[episode_idx]
-        else:
-            initial_states_task_key = task_description.replace(" ", "_")
-            episode_key = f"demo_{episode_idx}"
+    # Loop over versions
+    for version_to_test in versions_to_test:
+        
+        # Determine ablation BDDL file for this version
+        ablation_bddl_file = None
+        if available_versions and version_to_test is not None:
+            selected_files = [v[1] for v in available_versions if v[0] == version_to_test]
+            if selected_files:
+                ablation_bddl_file = os.path.join(bddl_folder, selected_files[0])
 
-
-            if not all_initial_states[initial_states_task_key][episode_key]["success"]:
-                log_message(f"Skipping episode {episode_idx} (failed expert demo)", log_file)
-                continue
-
-
-            initial_state = np.array(all_initial_states[initial_states_task_key][episode_key]["initial_state"])
-
-
-        log_message(f"Starting episode {task_episodes + 1}...", log_file)
-
-
-        # Run episode
-        success, replay_traj = run_episode(
-            cfg, env, task_description, policy, policy_config, 224, initial_state, log_file
-        )
-       
-        # ✅ CONTATORI SEMPRE CORRETTI
-        task_episodes += 1
-        total_episodes += 1
-        if success:
-            task_successes += 1
-            total_successes += 1
-
-
-        save_rollout_video(
-            replay_traj,
-            total_episodes,
-            success=success,
-            task_description=task_description,
-            log_file=log_file,
-            dataset_name=cfg.task_suite_name,
-            run=cfg.run_number,
+        # Initialize environment with this version
+        env, task_description, original_description = get_libero_env(
+            task,
+            cfg.model_family,
             change_command=cfg.change_command,
-            command_level=cfg.command_level
+            command_level=cfg.command_level,
+            ablation_bddl_file=ablation_bddl_file,
+            resolution=cfg.env_img_res
         )
-       
-        # Log results
-        log_message(f"Success: {success}", log_file)
-        log_message(f"# episodes: {total_episodes}", log_file)
-        log_message(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)", log_file)
 
+        # Log version info
+        version_label = f"v{version_to_test}" if version_to_test is not None else "default"
+        log_message("=" * 80, log_file)
+        log_message(f"Testing VERSION: {version_label}", log_file)
+        log_message(f"Original Command: {original_description}", log_file)
+        log_message(f"Variation Command: {task_description}", log_file)
+        log_message("=" * 80, log_file)
 
-    # Task results
-    task_success_rate = float(task_successes) / float(task_episodes) if task_episodes > 0 else 0
-    log_message(f"Task success rate: {task_success_rate:.4f}", log_file)
+        task_episodes = 0
+        task_successes = 0
 
+        # Run 50 episodes for this version
+        for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task), desc=f"Version {version_label}"):
+            
+            log_message(f"\n[{version_label}] Episode {episode_idx + 1}/{cfg.num_trials_per_task}", log_file)
+           
+            # Handle initial state
+            if cfg.initial_states_path == "DEFAULT":
+                initial_state = initial_states[episode_idx]
+            else:
+                initial_states_task_key = task_description.replace(" ", "_")
+                episode_key = f"demo_{episode_idx}"
 
-    if cfg.use_wandb:
-        wandb.log({
-            f"success_rate/{task_description}": task_success_rate,
-            f"num_episodes/{task_description}": task_episodes,
-        })
+                if not all_initial_states[initial_states_task_key][episode_key]["success"]:
+                    log_message(f"Skipping episode {episode_idx} (failed expert demo)", log_file)
+                    continue
 
+                initial_state = np.array(all_initial_states[initial_states_task_key][episode_key]["initial_state"])
 
-    return total_episodes, total_successes, task_description, task_success_rate, task_episodes
+            log_message(f"Starting episode {task_episodes + 1}...", log_file)
+
+            # Run episode
+            success, replay_traj = run_episode(
+                cfg, env, task_description, policy, policy_config, 224, initial_state, log_file
+            )
+           
+            task_episodes += 1
+            total_episodes += 1
+            if success:
+                task_successes += 1
+                total_successes += 1
+
+            save_rollout_video(
+                replay_traj,
+                total_episodes,
+                success=success,
+                task_description=task_description,
+                log_file=log_file,
+                dataset_name=cfg.task_suite_name,
+                run=cfg.run_number,
+                change_command=cfg.change_command,
+                command_level=cfg.command_level
+            )
+           
+            # Log results
+            log_message(f"Success: {success}", log_file)
+            log_message(f"Total episodes so far: {total_episodes}", log_file)
+            log_message(f"Total successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)", log_file)
+
+        # Version results
+        version_success_rate = float(task_successes) / float(task_episodes) if task_episodes > 0 else 0
+        log_message(f"\n{'='*80}", log_file)
+        log_message(f"VERSION {version_label} RESULTS:", log_file)
+        log_message(f"  Episodes: {task_episodes}", log_file)
+        log_message(f"  Successes: {task_successes}", log_file)
+        log_message(f"  Success Rate: {version_success_rate:.1%}", log_file)
+        log_message(f"{'='*80}\n", log_file)
+        
+        task_results_per_version[version_label] = {
+            'success_rate': version_success_rate,
+            'episodes': task_episodes,
+            'successes': task_successes
+        }
+
+        # Close environment and cleanup
+        try:
+            env.close()
+        except:
+            pass
+
+    # Calculate overall task success rate
+    total_task_episodes = sum(r['episodes'] for r in task_results_per_version.values())
+    total_task_successes = sum(r['successes'] for r in task_results_per_version.values())
+    task_success_rate = (float(total_task_successes) / float(total_task_episodes) if total_task_episodes > 0 else 0.0)
+    
+    # Print summary of all versions tested
+    if len(versions_to_test) > 1:
+        log_message("=" * 80, log_file)
+        log_message("SUMMARY BY VERSION:", log_file)
+        log_message("-" * 80, log_file)
+        for version_label, results in task_results_per_version.items():
+            sr = results['success_rate']
+            succ = results['successes']
+            eps = results['episodes']
+            log_message(f"  {version_label:>10}: {sr:.1%} ({succ}/{eps} episodes)", log_file)
+        log_message("-" * 80, log_file)
+        log_message(f"  {'OVERALL':>10}: {task_success_rate:.1%} ({total_task_successes}/{total_task_episodes} episodes)",log_file)
+        log_message("=" * 80, log_file)
+    else:
+        log_message("=" * 80, log_file)
+        log_message(f"TASK SUCCESS RATE: {task_success_rate:.1%} ({total_successes}/{total_episodes} episodes)", log_file)
+        log_message("=" * 80, log_file)
+
+    return total_episodes, total_successes, task_description, task_success_rate, total_task_episodes
 
 
 def print_results_table(task_results, command_levels, all_results):
@@ -739,17 +827,7 @@ def run_libero_eval(cfg: GenerateConfig):
 
 
     # Determine command levels to test
-    if cfg.change_command and cfg.command_level == "all":
-        command_levels = [None, "l1", "l2", "l3"]
-    elif cfg.change_command and cfg.command_level == "all_no_default":
-        command_levels = ["l1", "l2", "l3"]
-    elif cfg.change_command and cfg.command_level == "default":
-        command_levels = [None]
-    elif cfg.change_command and cfg.command_level is not None:
-        command_levels = [cfg.command_level]
-    else:
-        command_levels = [None]
-
+    command_levels = parse_command_levels(cfg)
 
     all_results = {}
     task_results = {}

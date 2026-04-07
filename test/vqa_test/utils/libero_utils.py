@@ -8,7 +8,7 @@ import numpy as np
 import tensorflow as tf
 from libero.libero import get_libero_path
 from libero.libero.envs import OffScreenRenderEnv
-from robot_utils import (
+from utils.robot_utils import (
     DATE,
     DATE_TIME,
 )
@@ -156,10 +156,10 @@ def save_rollout_video(rollout_traj, idx, success, task_description, log_file=No
     """Saves an MP4 replay of an episode."""
     # Build directory path based on configurations
     if change_command and command_level:
-        rollout_dir = f"/home/A.CARDAMONE7/outputs/rollouts/libero_goal/tinyvla/checkpoint_54000/{command_level}/run_{run}"
+        rollout_dir = f"/home/A.CARDAMONE7/outputs/rollouts/libero_goal/syntactic_variation/tinyvla/checkpoint_54000_test/{command_level}/run_{run}"
     else:
-        rollout_dir = f"/home/A.CARDAMONE7/outputs/rollouts/libero_goal/tinyvla/checkpoint_54000/default/run_{run}"
-    
+        rollout_dir = f"/home/A.CARDAMONE7/outputs/rollouts/libero_goal/syntactic_variation/tinyvla/checkpoint_54000_test/default/run_{run}"
+
     os.makedirs(rollout_dir, exist_ok=True)
     
     processed_task_description = task_description.lower().replace(" ", "_").replace("\n", "_").replace(".", "_")[:50]

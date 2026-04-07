@@ -17,7 +17,7 @@ import os
 import glob
 import pickle
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances, manhattan_distances
+from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
 import pandas as pd
 from Levenshtein import distance as levenshtein_distance
 
@@ -155,10 +155,7 @@ def analyze_embeddings(embeddings, output_csv="analysis_results.csv"):
             # 2. SEMANTIC: Euclidean Distance (L2) on mean rollout embeddings
             euc_dist = euclidean_distances([default_emb], [var_emb])[0, 0]
             
-            # 3. SEMANTIC: Manhattan Distance (L1) on mean rollout embeddings
-            man_dist = manhattan_distances([default_emb], [var_emb])[0, 0]
-            
-            # 4. LEXICAL: Normalized Levenshtein Distance
+            # 3. LEXICAL: Normalized Levenshtein Distance
             lev_dist = compute_levenshtein_normalized(default_cmd, var_cmd)
             
             # Store results
@@ -173,7 +170,6 @@ def analyze_embeddings(embeddings, output_csv="analysis_results.csv"):
                 'variation_success_rate': var_sr,
                 'cosine_similarity': cos_sim,
                 'euclidean_distance': euc_dist,
-                'manhattan_distance': man_dist,
                 'levenshtein_distance': lev_dist,
             })
             
@@ -181,7 +177,6 @@ def analyze_embeddings(embeddings, output_csv="analysis_results.csv"):
             print(f"  {level.upper():3s}:     {var_cmd} [{var_rollouts} rollouts{sr_str}]")
             print(f"           Semantic:   Cosine_sim={cos_sim:.4f}")
             print(f"           Semantic:   Euclidean_dist(L2)={euc_dist:.4f}")
-            print(f"           Semantic:   Manhattan_dist(L1)={man_dist:.4f}")
             print(f"           Lexical:    Lev_dist={lev_dist:.4f}")
     
     df = pd.DataFrame(results)
@@ -199,7 +194,6 @@ def analyze_embeddings(embeddings, output_csv="analysis_results.csv"):
         print(f"\n{level.upper()}:")
         print(f"  Cosine Similarity (semantic):     {level_data['cosine_similarity'].mean():.4f} ± {level_data['cosine_similarity'].std():.4f}")
         print(f"  Euclidean Distance L2 (semantic): {level_data['euclidean_distance'].mean():.4f} ± {level_data['euclidean_distance'].std():.4f}")
-        print(f"  Manhattan Distance L1 (semantic): {level_data['manhattan_distance'].mean():.4f} ± {level_data['manhattan_distance'].std():.4f}")
         print(f"  Levenshtein Distance (lexical):   {level_data['levenshtein_distance'].mean():.4f} ± {level_data['levenshtein_distance'].std():.4f}")
     
     # ===== OVERALL STATISTICS =====
@@ -208,14 +202,114 @@ def analyze_embeddings(embeddings, output_csv="analysis_results.csv"):
     print("="*80)
     print(f"  Overall Cosine Similarity:      {df['cosine_similarity'].mean():.4f} ± {df['cosine_similarity'].std():.4f}")
     print(f"  Overall Euclidean Distance L2:  {df['euclidean_distance'].mean():.4f} ± {df['euclidean_distance'].std():.4f}")
-    print(f"  Overall Manhattan Distance L1:  {df['manhattan_distance'].mean():.4f} ± {df['manhattan_distance'].std():.4f}")
     print(f"  Overall Levenshtein Distance:   {df['levenshtein_distance'].mean():.4f} ± {df['levenshtein_distance'].std():.4f}")
     
     # ===== SAVE RESULTS =====
     df.to_csv(output_csv, index=False)
     print(f"\n✓ Results saved: {output_csv}")
-    
+
+    # ===== SAVE FORMATTED OVERLAP TABLES (one per level) =====
+    base_path = output_csv.rsplit(".", 1)[0]
+    for lvl in ['l1', 'l2', 'l3']:
+        level_df = df[df['level'] == lvl].reset_index(drop=True)
+        if len(level_df) == 0:
+            continue
+        formatted_path = f"{base_path}_overlap_{lvl}.xlsx"
+        _save_formatted_overlap_table(level_df, lvl, formatted_path)
+
     return df
+
+
+def _save_formatted_overlap_table(level_df, level, output_path):
+    """Save a human-readable overlap analysis table as Excel for a single variation level."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"{level.upper()} Variations"
+
+    # ---- Title row ----
+    title = f"Overlapping Analysis - {level.upper()} Variations"
+    ws.merge_cells("A1:F1")
+    title_cell = ws["A1"]
+    title_cell.value = title
+    title_cell.font = Font(bold=True, size=13)
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 22
+
+    # ---- Header row ----
+    headers = ["N°", "Original Task Command", "Variation Task Command",
+               "Cosine Similarity", "Euclidean Dist.", "Levenshtein Dist."]
+    header_fill = PatternFill(fill_type="solid", fgColor="2F5496")
+    header_font = Font(bold=True, color="FFFFFF")
+    thin = Side(style="thin", color="000000")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    for col, h in enumerate(headers, start=1):
+        cell = ws.cell(row=2, column=col, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = border
+    ws.row_dimensions[2].height = 20
+
+    # ---- Data rows ----
+    alt_fill = PatternFill(fill_type="solid", fgColor="DCE6F1")
+    num_fmt_4 = "0.0000"
+
+    for i, row in level_df.iterrows():
+        excel_row = i + 3
+        fill = alt_fill if i % 2 == 1 else None
+        values = [
+            i + 1,
+            row['default_command'],
+            row['variation_command'],
+            round(row['cosine_similarity'], 4),
+            round(row['euclidean_distance'], 4),
+            round(row['levenshtein_distance'], 4),
+        ]
+        for col, val in enumerate(values, start=1):
+            cell = ws.cell(row=excel_row, column=col, value=val)
+            cell.border = border
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+            if fill:
+                cell.fill = fill
+            if col >= 4:
+                cell.number_format = num_fmt_4
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # ---- Average row ----
+    avg_row = len(level_df) + 3
+    avg_fill = PatternFill(fill_type="solid", fgColor="F4B942")
+    avg_font = Font(bold=True)
+
+    def fmt_mean_std(col_name):
+        mean = level_df[col_name].mean()
+        std = level_df[col_name].std()
+        return f"{mean:.4f} ± {std:.4f}"
+
+    avg_values = [
+        "AVERAGE", "", "",
+        fmt_mean_std('cosine_similarity'),
+        fmt_mean_std('euclidean_distance'),
+        fmt_mean_std('levenshtein_distance'),
+    ]
+    for col, val in enumerate(avg_values, start=1):
+        cell = ws.cell(row=avg_row, column=col, value=val)
+        cell.font = avg_font
+        cell.fill = avg_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # ---- Column widths ----
+    col_widths = [6, 52, 52, 18, 16, 18]
+    for col, width in enumerate(col_widths, start=1):
+        ws.column_dimensions[get_column_letter(col)].width = width
+
+    wb.save(output_path)
+    print(f"✓ Formatted overlap table saved: {output_path}")
 
 
 def compare_per_rollout_similarity(embeddings, task_id=0, level='l1'):
@@ -264,14 +358,6 @@ def compare_per_rollout_similarity(embeddings, task_id=0, level='l1'):
     
     euc_dists = np.array(euc_dists)
     
-    # Compute per-rollout Manhattan distances (L1)
-    man_dists = []
-    for i in range(min_rollouts):
-        dist = manhattan_distances([default_rollouts[i]], [var_rollouts[i]])[0, 0]
-        man_dists.append(dist)
-    
-    man_dists = np.array(man_dists)
-    
     print(f"\nTask {task_id} - Default vs {level.upper()}")
     print(f"  Default command: {default_data['command_text']}")
     print(f"  Variation command: {var_data['command_text']}")
@@ -285,13 +371,8 @@ def compare_per_rollout_similarity(embeddings, task_id=0, level='l1'):
     print(f"    Std:    {euc_dists.std():.4f}")
     print(f"    Min:    {euc_dists.min():.4f}")
     print(f"    Max:    {euc_dists.max():.4f}")
-    print(f"\n  Per-rollout manhattan distance L1 ({min_rollouts} rollouts):")
-    print(f"    Mean:   {man_dists.mean():.4f}")
-    print(f"    Std:    {man_dists.std():.4f}")
-    print(f"    Min:    {man_dists.min():.4f}")
-    print(f"    Max:    {man_dists.max():.4f}")
     
-    return similarities, euc_dists, man_dists
+    return similarities, euc_dists
 
 
 if __name__ == "__main__":
@@ -378,7 +459,7 @@ Examples:
         output_base = os.path.join(output_base, "combined_analysis")
     else:
         # Default: TinyVLA embeddings directory
-        default_dir = "/mnt/beegfs/a.cardamone7/outputs/embeddings/tinyvla"
+        default_dir = "/mnt/beegfs/a.cardamone7/outputs/embeddings/tinyvla/"
         embeddings = load_embeddings(embedding_dir=default_dir)
         output_base = os.path.join(default_dir, "combined_analysis")
     
